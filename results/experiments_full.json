@@ -1,0 +1,54 @@
+{
+  "T1": 2.148,
+  "f": [],
+  "e": [
+    {
+      "scenario": "e",
+      "mode": "dynamic",
+      "num_workers": 2,
+      "execution_time": 13.115,
+      "speedup": 0.1638,
+      "efficiency": 0.0819,
+      "throughput_mbs": 0.3,
+      "ratio": 2.939,
+      "worker_summary": {
+        "crash_w01": {
+          "tasks_done": 4,
+          "bytes": 429982,
+          "throughput": 2.77
+        },
+        "survive_w02": {
+          "tasks_done": 18,
+          "bytes": 4011196,
+          "throughput": 3.2
+        }
+      },
+      "worker_tasks": {
+        "crash_w01": 4,
+        "survive_w02": 18
+      },
+      "retry_count": 8,
+      "recovery_stats": {
+        "count": 8,
+        "mean": 0.432,
+        "max": 0.865,
+        "min": 0.287,
+        "all": [
+          0.865,
+          0.407,
+          0.406,
+          0.403,
+          0.288,
+          0.402,
+          0.4,
+          0.287
+        ]
+      },
+      "imbalance": {
+        "cv": 0.2,
+        "max_min_ratio": 1.5
+      },
+      "timestamp": 1795356317.8279798
+    }
+  ]
+}

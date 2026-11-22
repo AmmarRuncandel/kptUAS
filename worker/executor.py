@@ -125,9 +125,9 @@ class WorkerExecutor:
 
     def collect_result(self, task: Task, raw_data: bytes,
                        future: "concurrent.futures.Future",
-                       timeout: float = 300.0) -> TaskResult:
+                       timeout: float = 300.0) -> Tuple[TaskResult, bytes]:
         """
-        Tunggu hasil future dan bungkus menjadi TaskResult.
+        Tunggu hasil future dan bungkus menjadi TaskResult dan bytes container.
 
         Args:
             task:    Task asli.
@@ -136,7 +136,7 @@ class WorkerExecutor:
             timeout: batas waktu tunggu (detik).
 
         Returns:
-            TaskResult.
+            Tuple[TaskResult, bytes].
         """
         try:
             packed_bytes, stats = future.result(timeout=timeout)

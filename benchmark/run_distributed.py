@@ -67,6 +67,8 @@ def collect_distributed_results(summary_path: str, log_dir: str,
             for wid, ws in summary.get("worker_summary", {}).items()
         },
         "retry_count":     summary.get("retry_count", 0),
+        "recovery_stats":  summary.get("recovery_stats", {}),
+        "imbalance":       summary.get("imbalance", {}),
         "timestamp":       time.time(),
     }
 
@@ -129,6 +131,8 @@ def parse_args():
     p.add_argument("--scenario",   default="f", choices=["c","d","e","f"])
     p.add_argument("--mode",       default="dynamic", choices=["static","dynamic"])
     p.add_argument("--output",     default="results/experiments_distributed.json")
+    p.add_argument("--build-full", action="store_true", default=True,
+                   help="Otomatis bangun experiments_full.json")
     return p.parse_args()
 
 
@@ -140,4 +144,6 @@ if __name__ == "__main__":
         args.num_workers, args.scenario, args.mode
     )
     save_experiment_entry(entry, args.output)
+    if args.build_full:
+        build_full_experiment(args.output, args.t1)
     logger.info(json.dumps(entry, indent=2))

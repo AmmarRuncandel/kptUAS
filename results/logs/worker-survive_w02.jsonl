@@ -8,3 +8,13 @@
 {"timestamp": 1795355381.9161124, "level": "INFO", "logger": "worker", "message": "Menunggu task yang masih berjalan selesai..."}
 {"timestamp": 1795355382.2830794, "level": "INFO", "logger": "worker.executor", "message": "[survive_w02] ProcessPoolExecutor dihentikan"}
 {"timestamp": 1795355382.2854538, "level": "INFO", "logger": "worker", "message": "=== WORKER survive_w02 SELESAI (task=18) ==="}
+{"timestamp": 1795356197.8224173, "level": "INFO", "logger": "worker", "message": "=== WORKER survive_w02 DIMULAI ==="}
+{"timestamp": 1795356197.82295, "level": "INFO", "logger": "worker", "message": "Master: 127.0.0.1:9007"}
+{"timestamp": 1795356197.82295, "level": "INFO", "logger": "worker", "message": "Procs : 12"}
+{"timestamp": 1795356197.844977, "level": "INFO", "logger": "worker", "message": "Terhubung ke Master 127.0.0.1:9007"}
+{"timestamp": 1795356197.8497193, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai survive_w02 [transfer=socket]"}
+{"timestamp": 1795356197.8623257, "level": "INFO", "logger": "worker.executor", "message": "[survive_w02] ProcessPoolExecutor dimulai (procs=12, throttle=0%)"}
+{"timestamp": 1795356209.6610348, "level": "INFO", "logger": "worker", "message": "Menerima SHUTDOWN dari Master"}
+{"timestamp": 1795356209.6610348, "level": "INFO", "logger": "worker", "message": "Menunggu task yang masih berjalan selesai..."}
+{"timestamp": 1795356210.01705, "level": "INFO", "logger": "worker.executor", "message": "[survive_w02] ProcessPoolExecutor dihentikan"}
+{"timestamp": 1795356210.0256615, "level": "INFO", "logger": "worker", "message": "=== WORKER survive_w02 SELESAI (task=18) ==="}

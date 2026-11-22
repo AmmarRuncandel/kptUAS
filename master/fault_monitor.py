@@ -101,31 +101,45 @@ class FaultMonitor:
                    "timestamp": detected_at}
         )
 
+        # Catat timestamp deteksi untuk tiap task yang dipegang SEBELUM di-requeue
+        # (untuk pengukuran Recovery Time)
+        assigned_tasks = self._get_assigned_tasks_of_worker(worker_id)
+        with self._lock:
+            for tid in assigned_tasks:
+                if tid not in self._failure_ts:
+                    self._failure_ts[tid] = detected_at
+
         # Requeue task milik Worker DEAD
         requeued = self._scheduler.requeue_worker_tasks(worker_id)
-
-        # Catat timestamp deteksi untuk tiap task yang di-requeue
-        # (untuk pengukuran Recovery Time)
-        with self._lock:
-            assigned_tasks = self._get_assigned_tasks_of_worker(worker_id)
-            for tid in assigned_tasks:
-                self._failure_ts[tid] = detected_at
+        requeued_count = len(requeued) if isinstance(requeued, list) else requeued
 
         logger.info(
-            f"Worker {worker_id}: {requeued} task di-requeue",
+            f"Worker {worker_id}: {requeued_count} task di-requeue",
             extra={"worker_id": worker_id, "event": "requeue",
-                   "requeued": requeued}
+                   "requeued": requeued_count}
         )
 
         if self._on_dead:
             self._on_dead(worker_id)
 
+    def record_worker_failure(self, worker_id: str, detected_at: Optional[float] = None) -> None:
+        """
+        Catat waktu kegagalan Worker (misal saat koneksi TCP putus seketika).
+        Harus dipanggil sebelum task di-requeue agar Recovery Time dapat dihitung.
+        """
+        ts = detected_at or time.time()
+        assigned_tasks = self._get_assigned_tasks_of_worker(worker_id)
+        with self._lock:
+            for tid in assigned_tasks:
+                if tid not in self._failure_ts:
+                    self._failure_ts[tid] = ts
+
     def _get_assigned_tasks_of_worker(self, worker_id: str) -> list:
         """Ambil daftar task_id yang sebelumnya dipegang Worker ini."""
-        # Diisi dari scheduler._assigned sebelum requeue
+        if hasattr(self._scheduler, "get_assigned_task_ids_of_worker"):
+            return self._scheduler.get_assigned_task_ids_of_worker(worker_id)
         summary = self._scheduler.get_summary()
-        # Hanya bisa mendapat info dari scheduler; ambil dari state
-        return []  # sudah ditangani di requeue_worker_tasks
+        return []
 
     def record_recovery(self, task_id: str) -> Optional[float]:
         """

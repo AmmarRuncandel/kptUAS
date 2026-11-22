@@ -147,6 +147,69 @@ class TestSchedulerAndFaultTolerance(unittest.TestCase):
         self.assertEqual(requeued2, 0)
         self.assertEqual(len(sched._failed_tasks), 1)
 
+    def test_fault_monitor_recovery_time_recorded(self):
+        from master.fault_monitor import FaultMonitor
+        tasks = [
+            Task("task-rec-1", "/file1", 0, 1, 0, 1024, "lzma", 6),
+        ]
+        sched = Scheduler(tasks, mode="dynamic", max_retries=3)
+        winfo = WorkerInfo("w-crash", "host", "1.1.1.1", 2, 4.0, 2)
+        worker_registry = {"w-crash": winfo}
+        fm = FaultMonitor(worker_registry, sched, heartbeat_timeout=1.0, check_interval=0.1)
+
+        # Worker mengambil task
+        t = sched.get_task(winfo)
+        self.assertIsNotNone(t)
+
+        # Worker mati (TCP disconnect atau dead)
+        fm.record_worker_failure("w-crash", detected_at=time.time() - 0.5)
+        sched.requeue_worker_tasks("w-crash")
+
+        # Task diambil worker baru dan selesai
+        winfo2 = WorkerInfo("w-survive", "host2", "1.1.1.2", 2, 4.0, 2)
+        t_recovered = sched.get_task(winfo2)
+        self.assertEqual(t_recovered.task_id, "task-rec-1")
+
+        # Catat recovery
+        rt = fm.record_recovery("task-rec-1")
+        self.assertIsNotNone(rt)
+        self.assertGreater(rt, 0.4)
+        stats = fm.get_recovery_stats()
+        self.assertEqual(stats["count"], 1)
+        self.assertGreater(stats["mean"], 0.4)
+
+    def test_static_scheduler_auto_distribute(self):
+        tasks = [
+            Task(f"t-{i}", "/f", 0, 1, 0, 100, "lzma", 6)
+            for i in range(4)
+        ]
+        sched = Scheduler(tasks, mode="static", max_retries=3)
+        w01 = WorkerInfo("w01", "h1", "1.1.1.1", 2, 4.0, 2)
+        w02 = WorkerInfo("w02", "h2", "1.1.1.2", 2, 4.0, 2)
+        sched.register_worker(w01)
+        sched.register_worker(w02)
+
+        # Tanpa distribute_static manual, get_task harus tetap memberikan task
+        t1 = sched.get_task(w01)
+        self.assertIsNotNone(t1)
+        t2 = sched.get_task(w02)
+        self.assertIsNotNone(t2)
+
+    def test_scheduler_total_retries(self):
+        tasks = [
+            Task("t1", "/f", 0, 1, 0, 100, "lzma", 6),
+            Task("t2", "/f", 0, 1, 0, 200, "lzma", 6),
+        ]
+        sched = Scheduler(tasks, mode="dynamic", max_retries=3)
+        w01 = WorkerInfo("w01", "h1", "1.1.1.1", 2, 4.0, 2)
+        sched.get_task(w01)
+        self.assertEqual(sched.total_retries, 0)
+
+        # Requeue -> attempts bertambah pada saat get_task berikutnya
+        sched.requeue_worker_tasks("w01")
+        sched.get_task(w01)
+        self.assertEqual(sched.total_retries, 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

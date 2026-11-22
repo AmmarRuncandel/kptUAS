@@ -55,6 +55,7 @@ DEFAULTS = {
     "heartbeat_interval": 2.0,
     "mode":               "dynamic",
     "transfer_mode":      "socket",
+    "expected_workers":   None,
     "log_level":          "INFO",
 }
 
@@ -140,6 +141,15 @@ class WorkerHandler(threading.Thread):
             self.master.worker_registry[self.worker_id] = winfo
             self.master.worker_sockets[self.worker_id]  = self.conn
 
+        # Daftarkan worker ke scheduler
+        if self.master.scheduler:
+            self.master.scheduler.register_worker(winfo)
+            # Jika mode static dengan target expected_workers, lakukan distribute_static saat kuota terpenuhi
+            if self.master.mode == "static" and self.master.expected_workers:
+                with self.master._registry_lock:
+                    if len(self.master.worker_registry) >= self.master.expected_workers:
+                        self.master.scheduler.distribute_static(list(self.master.worker_registry.keys()))
+
         logger.info(
             f"Worker TERDAFTAR: {self.worker_id} @ {winfo.ip} "
             f"(cores={winfo.num_cores}, procs={winfo.num_procs})"
@@ -160,6 +170,13 @@ class WorkerHandler(threading.Thread):
         if not winfo:
             send_message(self.conn, MsgType.ERROR, {"message": "Worker tidak dikenal"})
             return
+
+        # Pada mode static, jika expected_workers ditentukan, tunggu sampai semua worker terhubung
+        if self.master.mode == "static" and self.master.expected_workers:
+            with self.master._registry_lock:
+                if len(self.master.worker_registry) < self.master.expected_workers:
+                    send_message(self.conn, MsgType.NO_MORE_TASKS, {"wait": True})
+                    return
 
         # Update jumlah slot kosong dari pesan REQUEST_TASK
         winfo.active_tasks = msg.get("active_tasks", 0)
@@ -233,16 +250,17 @@ class WorkerHandler(threading.Thread):
             if is_new:
                 self.master.scheduler.mark_done(result.task_id)
 
-                # Update statistik Worker
+                # Update statistik Worker (record_task_done otomatis meng-update tasks_done dan bytes_processed)
                 if winfo:
-                    winfo.tasks_done      += 1
-                    winfo.bytes_processed += result.original_size
                     winfo.record_task_done(result.original_size, result.duration)
 
                 # Catat recovery jika task ini adalah hasil requeue
-                self.master.fault_monitor.record_recovery(result.task_id)
-
-                self.master._retry_count_total += result_dict.get("retried", 0)
+                rec_time = self.master.fault_monitor.record_recovery(result.task_id)
+                if rec_time is not None:
+                    logger.info(
+                        f"[RECOVERY] Task {result.task_id[:8]} berhasil pulih di {self.worker_id} "
+                        f"dalam {rec_time:.2f} detik"
+                    )
 
                 logger.debug(
                     f"← RESULT {result.task_id[:8]} dari {self.worker_id} "
@@ -282,9 +300,13 @@ class WorkerHandler(threading.Thread):
             winfo = self.master.worker_registry.get(self.worker_id)
             if winfo:
                 winfo.alive = False
+            # Catat kegagalan worker untuk perhitungan Recovery Time sebelum requeue
+            if self.master.fault_monitor:
+                self.master.fault_monitor.record_worker_failure(self.worker_id)
             requeued = self.master.scheduler.requeue_worker_tasks(self.worker_id)
+            requeued_count = len(requeued) if isinstance(requeued, list) else requeued
             logger.warning(
-                f"Worker {self.worker_id} disconnect: {requeued} task di-requeue"
+                f"Worker {self.worker_id} disconnect: {requeued_count} task di-requeue"
             )
 
 
@@ -305,6 +327,7 @@ class MasterServer:
         self.transfer_mode = cfg["transfer_mode"]
         self.output_dir    = cfg["output_dir"]
         self.max_retries   = cfg["max_retries"]
+        self.expected_workers = cfg.get("expected_workers")
 
         self.worker_registry: Dict[str, WorkerInfo] = {}
         self.worker_sockets:  Dict[str, socket.socket] = {}
@@ -418,6 +441,8 @@ def parse_args() -> argparse.Namespace:
                    choices=["static","dynamic"])
     p.add_argument("--transfer",     default=DEFAULTS["transfer_mode"],
                    choices=["socket","shared_fs"])
+    p.add_argument("--expected-workers", type=int, default=None,
+                   help="Jumlah Worker yang ditunggu sebelum mendistribusikan task (mode static)")
     p.add_argument("--max-retries",  type=int, default=DEFAULTS["max_retries"])
     p.add_argument("--log-level",    default=DEFAULTS["log_level"])
     p.add_argument("--config",       default=None, help="Path file config JSON")
@@ -441,6 +466,7 @@ def load_config(args) -> dict:
     cfg["chunk_size"]    = args.chunk_size * 1024 * 1024
     cfg["mode"]          = args.mode
     cfg["transfer_mode"] = args.transfer
+    cfg["expected_workers"] = args.expected_workers
     cfg["max_retries"]   = args.max_retries
     cfg["log_level"]     = args.log_level
     return cfg
@@ -509,16 +535,6 @@ def main() -> None:
     server.fault_monitor.stop()
     server.stop()
 
-    # Ringkasan akhir
-    summary = server.collector.get_final_summary(
-        server.worker_registry, server._retry_count_total
-    )
-    summary["elapsed_seconds"] = round(elapsed, 3)
-    summary["elapsed"]         = format_duration(elapsed)
-
-    summary_path = os.path.join(cfg["output_dir"], "summary.json")
-    server.collector.save_summary(summary, summary_path)
-
     # Recovery stats
     recovery = server.fault_monitor.get_recovery_stats()
     logger.info(f"Recovery Time stats: {recovery}")
@@ -526,6 +542,18 @@ def main() -> None:
     # Imbalance metrics
     imbalance = server.scheduler.get_imbalance_metrics()
     logger.info(f"Imbalance (CV={imbalance['cv']}, max/min={imbalance['max_min_ratio']})")
+
+    # Ringkasan akhir (gunakan server.scheduler.total_retries)
+    summary = server.collector.get_final_summary(
+        server.worker_registry, server.scheduler.total_retries
+    )
+    summary["elapsed_seconds"] = round(elapsed, 3)
+    summary["elapsed"]         = format_duration(elapsed)
+    summary["recovery_stats"]   = recovery
+    summary["imbalance"]       = imbalance
+
+    summary_path = os.path.join(cfg["output_dir"], "summary.json")
+    server.collector.save_summary(summary, summary_path)
 
     print("\n" + "="*60)
     print("RINGKASAN AKHIR MASTER")

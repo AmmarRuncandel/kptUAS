@@ -20,7 +20,19 @@ import socket
 import json
 import time
 
-import pytest
+try:
+    import pytest
+    HAS_PYTEST = True
+except ImportError:
+    HAS_PYTEST = False
+    class DummyPytest:
+        def fixture(self, fn=None):
+            return fn if fn else lambda f: f
+        class mark:
+            @staticmethod
+            def parametrize(*args, **kwargs):
+                return lambda f: f
+    pytest = DummyPytest()
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -381,4 +393,9 @@ class TestSchedulerLPT:
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    if HAS_PYTEST:
+        pytest.main([__file__, "-v"])
+    else:
+        print("pytest tidak terpasang; menjalankan test runner alternatif (tests/run_tests.py):")
+        import subprocess
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "run_tests.py")])

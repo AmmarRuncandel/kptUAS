@@ -1,0 +1,20 @@
+{"timestamp": 1795356249.4260166, "level": "INFO", "logger": "worker", "message": "=== WORKER static_w02 DIMULAI ==="}
+{"timestamp": 1795356249.4260166, "level": "INFO", "logger": "worker", "message": "Master: 127.0.0.1:9008"}
+{"timestamp": 1795356249.4260166, "level": "INFO", "logger": "worker", "message": "Procs : 12"}
+{"timestamp": 1795356249.4538069, "level": "INFO", "logger": "worker", "message": "Terhubung ke Master 127.0.0.1:9008"}
+{"timestamp": 1795356249.4629962, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai static_w02 [transfer=socket]"}
+{"timestamp": 1795356249.4769793, "level": "INFO", "logger": "worker.executor", "message": "[static_w02] ProcessPoolExecutor dimulai (procs=12, throttle=0%)"}
+{"timestamp": 1795356251.0055158, "level": "INFO", "logger": "worker", "message": "Menerima SHUTDOWN dari Master"}
+{"timestamp": 1795356251.005994, "level": "INFO", "logger": "worker", "message": "Menunggu task yang masih berjalan selesai..."}
+{"timestamp": 1795356251.4869924, "level": "INFO", "logger": "worker.executor", "message": "[static_w02] ProcessPoolExecutor dihentikan"}
+{"timestamp": 1795356251.4902365, "level": "INFO", "logger": "worker", "message": "=== WORKER static_w02 SELESAI (task=0) ==="}
+{"timestamp": 1795356299.6503332, "level": "INFO", "logger": "worker", "message": "=== WORKER static_w02 DIMULAI ==="}
+{"timestamp": 1795356299.650898, "level": "INFO", "logger": "worker", "message": "Master: 127.0.0.1:9009"}
+{"timestamp": 1795356299.650898, "level": "INFO", "logger": "worker", "message": "Procs : 12"}
+{"timestamp": 1795356299.6634548, "level": "INFO", "logger": "worker", "message": "Terhubung ke Master 127.0.0.1:9009"}
+{"timestamp": 1795356299.6706064, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai static_w02 [transfer=socket]"}
+{"timestamp": 1795356299.682727, "level": "INFO", "logger": "worker.executor", "message": "[static_w02] ProcessPoolExecutor dimulai (procs=12, throttle=0%)"}
+{"timestamp": 1795356301.327847, "level": "INFO", "logger": "worker", "message": "Menerima SHUTDOWN dari Master"}
+{"timestamp": 1795356301.328964, "level": "INFO", "logger": "worker", "message": "Menunggu task yang masih berjalan selesai..."}
+{"timestamp": 1795356301.7681491, "level": "INFO", "logger": "worker.executor", "message": "[static_w02] ProcessPoolExecutor dihentikan"}
+{"timestamp": 1795356301.7706394, "level": "INFO", "logger": "worker", "message": "=== WORKER static_w02 SELESAI (task=11) ==="}

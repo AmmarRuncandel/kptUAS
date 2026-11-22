@@ -85,6 +85,14 @@ class WorkerNode:
         # Futures yang sedang berjalan: task_id → (Future, Task, raw_data)
         self._pending: Dict[str, Tuple] = {}
         self._pending_lock = threading.Lock()
+        self._send_lock    = threading.Lock()
+
+    def _send(self, msg_type: str, payload: dict,
+              binary_data: Optional[bytes] = None) -> None:
+        """Kirim pesan ke socket dengan lock thread-safe."""
+        with self._send_lock:
+            if self._sock:
+                send_message(self._sock, msg_type, payload, binary_data=binary_data)
 
     # ------------------------------------------------------------------
     #  Koneksi
@@ -123,7 +131,7 @@ class WorkerNode:
             except ImportError:
                 ram_gb = 0.0
 
-            send_message(self._sock, MsgType.REGISTER, {
+            self._send(MsgType.REGISTER, {
                 "worker_id": self.worker_id,
                 "hostname":  socket.gethostname(),
                 "ip":        socket.gethostbyname(socket.gethostname()),
@@ -195,11 +203,22 @@ class WorkerNode:
             # Minta task jika ada slot kosong
             if self.executor.available_slots > 0:
                 try:
-                    send_message(self._sock, MsgType.REQUEST_TASK, {
+                    self._send(MsgType.REQUEST_TASK, {
                         "worker_id":   self.worker_id,
                         "active_tasks": self.executor.active_count,
                     })
-                    msg, binary = recv_message(self._sock)
+
+                    # Terima pesan, lewati HEARTBEAT_ACK jika ada
+                    msg, binary = None, None
+                    while self._running:
+                        msg, binary = recv_message(self._sock)
+                        if msg.get("type") == MsgType.HEARTBEAT_ACK:
+                            continue
+                        break
+
+                    if msg is None:
+                        break
+
                     self._handle_message(msg, binary)
 
                     if msg.get("type") == MsgType.NO_MORE_TASKS:
@@ -300,8 +319,8 @@ class WorkerNode:
     def _send_result(self, result: TaskResult, packed_bytes: bytes) -> None:
         """Kirim TASK_RESULT ke Master."""
         try:
-            send_message(
-                self._sock, MsgType.TASK_RESULT,
+            self._send(
+                MsgType.TASK_RESULT,
                 {"result": result.to_dict()},
                 binary_data=packed_bytes if result.status == "DONE" else None,
             )
@@ -315,7 +334,7 @@ class WorkerNode:
             time.sleep(interval)
             stats = self.monitor.get_current()
             try:
-                send_message(self._sock, MsgType.HEARTBEAT, {
+                self._send(MsgType.HEARTBEAT, {
                     "worker_id":   self.worker_id,
                     "cpu_pct":     stats["cpu_pct"],
                     "mem_pct":     stats["mem_pct"],

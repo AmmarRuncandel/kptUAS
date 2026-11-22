@@ -28,6 +28,25 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Helper RequeuedTasks untuk kompatibilitas backward (list & int)
+# ---------------------------------------------------------------------------
+
+class RequeuedTasks(list):
+    """
+    List of task_id yang di-requeue.
+    Mendukung perbandingan dengan int (misal: requeued == 3 atau len(requeued) == 3)
+    agar kompatibel dengan kode lama dan unit test.
+    """
+    def __eq__(self, other):
+        if isinstance(other, int):
+            return len(self) == other
+        return super().__eq__(other)
+
+    def __int__(self):
+        return len(self)
+
+
+# ---------------------------------------------------------------------------
 # WorkerInfo: rekam kapasitas dan status tiap Worker
 # ---------------------------------------------------------------------------
 
@@ -136,12 +155,15 @@ class Scheduler:
 
         # Static mode: pre-assign round-robin
         self._static_assignments: Dict[str, Deque[Task]] = {}
+        self._registered_worker_ids: List[str] = []
 
         logger.info(f"Scheduler mode={mode}, total_tasks={len(tasks)}")
 
     def register_worker(self, worker_info: WorkerInfo) -> None:
         """Daftarkan Worker ke scheduler untuk mode static."""
         with self._lock:
+            if worker_info.worker_id not in self._registered_worker_ids:
+                self._registered_worker_ids.append(worker_info.worker_id)
             if self.mode == "static":
                 if worker_info.worker_id not in self._static_assignments:
                     self._static_assignments[worker_info.worker_id] = deque()
@@ -149,13 +171,14 @@ class Scheduler:
     def distribute_static(self, worker_ids: List[str]) -> None:
         """
         Mode static: bagikan semua task ke Worker secara round-robin.
-        Dipanggil sekali setelah semua Worker terdaftar.
+        Dipanggil sekali setelah semua Worker terdaftar atau secara dinamis.
         """
         with self._lock:
             if self.mode != "static":
                 return
             for wid in worker_ids:
-                self._static_assignments[wid] = deque()
+                if wid not in self._static_assignments:
+                    self._static_assignments[wid] = deque()
             tasks_list = list(self._queue)
             self._queue.clear()
             for i, task in enumerate(tasks_list):
@@ -163,6 +186,18 @@ class Scheduler:
                 self._static_assignments[wid].append(task)
             total = sum(len(q) for q in self._static_assignments.values())
             logger.info(f"Static distribution: {total} tasks ke {len(worker_ids)} Worker")
+
+    def get_assigned_task_ids_of_worker(self, worker_id: str) -> List[str]:
+        """Ambil daftar task_id yang sedang dipegang oleh Worker ini."""
+        with self._lock:
+            return [t.task_id for t in self._assigned.values()
+                    if t.assigned_worker == worker_id]
+
+    @property
+    def total_retries(self) -> int:
+        """Total percobaan ulang yang terjadi pada seluruh task."""
+        with self._lock:
+            return sum(max(0, t.attempts - 1) for t in self._all_tasks.values())
 
     def get_task(self, worker_info: WorkerInfo) -> Optional[Task]:
         """
@@ -180,6 +215,20 @@ class Scheduler:
                 return self._get_task_dynamic(worker_info)
 
     def _get_task_static(self, worker_info: WorkerInfo) -> Optional[Task]:
+        # Jika antrean static worker belum diisi tapi masih ada task global di _queue,
+        # otomatis bagikan ke worker yang sudah terdaftar
+        if self._queue:
+            workers = self._registered_worker_ids or [worker_info.worker_id]
+            for wid in workers:
+                if wid not in self._static_assignments:
+                    self._static_assignments[wid] = deque()
+            tasks_list = list(self._queue)
+            self._queue.clear()
+            for i, task in enumerate(tasks_list):
+                wid = workers[i % len(workers)]
+                self._static_assignments[wid].append(task)
+            logger.info(f"Auto static distribution: {len(tasks_list)} tasks ke {len(workers)} worker")
+
         q = self._static_assignments.get(worker_info.worker_id, deque())
         if not q:
             return None
@@ -223,17 +272,18 @@ class Scheduler:
                 self._all_tasks[task_id] = task
                 logger.debug(f"Task {task_id[:8]} DONE (total: {self._completed_count}/{self._total_count})")
 
-    def requeue_worker_tasks(self, worker_id: str) -> int:
+    def requeue_worker_tasks(self, worker_id: str) -> RequeuedTasks:
         """
         Komponen e – Fault Tolerance: kembalikan semua task milik Worker DEAD ke antrean.
 
         Returns:
-            Jumlah task yang di-requeue.
+            RequeuedTasks (list of task_id) yang juga bernilai integer jumlah task
+            agar kompatibel dengan perbandingan int (contoh: requeued == 3).
         """
         with self._lock:
             to_requeue = [t for t in self._assigned.values()
                           if t.assigned_worker == worker_id]
-            count = 0
+            requeued_ids = []
             for task in to_requeue:
                 del self._assigned[task.task_id]
                 if task.attempts >= self.max_retries:
@@ -248,10 +298,10 @@ class Scheduler:
                     task.status          = TaskStatus.PENDING
                     task.assigned_worker = None
                     self._queue.appendleft(task)
-                    count += 1
-            if count:
-                logger.info(f"Requeue {count} task dari Worker {worker_id}")
-            return count
+                    requeued_ids.append(task.task_id)
+            if requeued_ids:
+                logger.info(f"Requeue {len(requeued_ids)} task dari Worker {worker_id}")
+            return RequeuedTasks(requeued_ids)
 
     def is_all_done(self) -> bool:
         """Semua task selesai atau gagal?"""

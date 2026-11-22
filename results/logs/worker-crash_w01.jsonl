@@ -5,3 +5,10 @@
 {"timestamp": 1795355365.0760763, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai crash_w01 [transfer=socket]"}
 {"timestamp": 1795355365.088451, "level": "INFO", "logger": "worker.executor", "message": "[crash_w01] ProcessPoolExecutor dimulai (procs=12, throttle=0%)"}
 {"timestamp": 1795355365.941892, "level": "WARNING", "logger": "worker", "message": "[CRASH-SIM] Worker crash_w01 crash setelah 5 task!"}
+{"timestamp": 1795356197.8147352, "level": "INFO", "logger": "worker", "message": "=== WORKER crash_w01 DIMULAI ==="}
+{"timestamp": 1795356197.8147352, "level": "INFO", "logger": "worker", "message": "Master: 127.0.0.1:9007"}
+{"timestamp": 1795356197.815152, "level": "INFO", "logger": "worker", "message": "Procs : 12"}
+{"timestamp": 1795356197.8293242, "level": "INFO", "logger": "worker", "message": "Terhubung ke Master 127.0.0.1:9007"}
+{"timestamp": 1795356197.8367186, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai crash_w01 [transfer=socket]"}
+{"timestamp": 1795356197.84756, "level": "INFO", "logger": "worker.executor", "message": "[crash_w01] ProcessPoolExecutor dimulai (procs=12, throttle=0%)"}
+{"timestamp": 1795356198.7093978, "level": "WARNING", "logger": "worker", "message": "[CRASH-SIM] Worker crash_w01 crash setelah 5 task!"}
