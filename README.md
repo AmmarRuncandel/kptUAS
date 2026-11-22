@@ -52,42 +52,35 @@ python data/fetch_dataset.py --output-dir data/sample
 
 ### 2. Jalankan Master
 
-**Windows:**
+Cukup ketik satu perintah di Master (semua parameter sudah memiliki nilai default optimal):
+
+```bash
+python master.py
+```
+
+*Atau via skrip batch Windows:*
 ```bat
-scripts\start_master.bat data\sample dynamic
+scripts\start_master.bat
 ```
 
-**Linux:**
+*(Opsional: Anda tetap bisa kustomisasi via flag, misal: `python master.py --mode static --port 9000`)*
+
+### 3. Jalankan Worker di 9 Komputer (Tanpa Perlu Tahu IP Master!)
+
+Worker kini dilengkapi fitur **Auto-Discovery via UDP Broadcast Beacon**. Anda **TIDAK PERLU** mencari atau mengetik IP Master secara manual. Cukup jalankan di setiap komputer Worker:
+
 ```bash
-bash scripts/start_master.sh data/sample dynamic
+python worker.py
 ```
 
-**Atau langsung:**
-```bash
-python master/master.py --input-dir data/sample --output-dir results/output \
-    --host 0.0.0.0 --port 9000 --algorithm lzma --level 6 \
-    --mode dynamic --transfer socket
-```
-
-### 3. Jalankan Worker di 9 Komputer
-
-Ganti `192.168.1.10` dengan IP Master yang sebenarnya.
-
-**Windows (tiap komputer Worker):**
+*Atau via skrip batch Windows:*
 ```bat
-scripts\start_worker.bat 192.168.1.10 w01
+scripts\start_worker.bat
 ```
 
-**Linux:**
-```bash
-bash scripts/start_worker.sh 192.168.1.10 w01
-```
+Worker akan otomatis memindai jaringan lokal, menemukan Master, dan langsung mulai memproses tugas!
 
-**Atau langsung:**
-```bash
-python worker/worker.py --master-host 192.168.1.10 --master-port 9000 \
-    --worker-id w01 --log-level INFO
-```
+*(Opsional: Jika ingin menentukan ID atau IP manual: `python worker.py --master-host 192.168.1.10 --worker-id w01`)*
 
 ### 4. Simulasi Fault Tolerance (untuk demo)
 

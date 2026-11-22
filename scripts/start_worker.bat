@@ -1,48 +1,40 @@
 @echo off
 REM start_worker.bat – Jalankan Worker Node di Windows
-REM Penggunaan: start_worker.bat <MASTER_HOST> [WORKER_ID] [PROCS]
-REM Contoh: start_worker.bat 192.168.1.10 w01 4
+REM Penggunaan: start_worker.bat [PASSCODE] [WORKER_ID] [PROCS]
+REM Contoh: start_worker.bat 839201 w01 4
+REM Atau jalankan tanpa argumen: start_worker.bat (akan diminta memasukkan sandi di layar)
 
 setlocal
 
-set MASTER_HOST=%~1
-if "%MASTER_HOST%"=="" (
-    echo ERROR: Harus menyertakan IP Master!
-    echo Penggunaan: start_worker.bat ^<MASTER_HOST^> [WORKER_ID] [PROCS]
-    pause & exit /b 1
-)
-
+set PASSCODE=%~1
 set WORKER_ID=%~2
 if "%WORKER_ID%"=="" set WORKER_ID=w-%COMPUTERNAME%
 
 set PROCS=%~3
 if "%PROCS%"=="" set PROCS=0
 
-set MASTER_PORT=9000
-
 echo ================================================================
-echo  WORKER NODE – Distributed Data Compression
+echo  WORKER NODE – Distributed Data Compression (Auto-Discovery)
 echo ================================================================
-echo  Master : %MASTER_HOST%:%MASTER_PORT%
-echo  Worker : %WORKER_ID%
-echo  Procs  : %PROCS% (0 = auto = jumlah CPU core)
+echo  Worker ID : %WORKER_ID%
+echo  Procs     : %PROCS% (0 = auto = jumlah CPU core)
+if not "%PASSCODE%"=="" (
+    echo  Passcode  : %PASSCODE%
+)
 echo ================================================================
 
 cd /d "%~dp0.."
 
-if "%PROCS%"=="0" (
-    python worker\worker.py ^
-        --master-host "%MASTER_HOST%" ^
-        --master-port %MASTER_PORT% ^
-        --worker-id "%WORKER_ID%" ^
-        --log-level INFO
-) else (
-    python worker\worker.py ^
-        --master-host "%MASTER_HOST%" ^
-        --master-port %MASTER_PORT% ^
-        --worker-id "%WORKER_ID%" ^
-        --procs %PROCS% ^
-        --log-level INFO
+set CMD=python worker.py --worker-id "%WORKER_ID%"
+
+if not "%PASSCODE%"=="" (
+    set CMD=%CMD% --passcode "%PASSCODE%"
 )
+
+if not "%PROCS%"=="0" (
+    set CMD=%CMD% --procs %PROCS%
+)
+
+%CMD%
 
 pause

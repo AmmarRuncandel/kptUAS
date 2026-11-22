@@ -211,5 +211,8 @@ class TestSchedulerAndFaultTolerance(unittest.TestCase):
         self.assertEqual(sched.total_retries, 1)
 
 
+from tests.test_auth_discovery import TestAuthAndMultiMaster
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

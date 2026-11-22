@@ -36,6 +36,7 @@ from master.scheduler import Scheduler, WorkerInfo
 from master.fault_monitor import FaultMonitor
 from master.collector import ResultCollector
 from common.tasks import TaskResult
+from common.discovery import MasterBeacon
 
 logger = logging.getLogger("master")
 
@@ -56,6 +57,7 @@ DEFAULTS = {
     "mode":               "dynamic",
     "transfer_mode":      "socket",
     "expected_workers":   None,
+    "passcode":           None,
     "log_level":          "INFO",
 }
 
@@ -127,7 +129,21 @@ class WorkerHandler(threading.Thread):
     # ------------------------------------------------------------------ #
 
     def _handle_register(self, msg: dict) -> None:
-        """Komponen c: REGISTER — daftarkan Worker."""
+        """Komponen c: REGISTER — daftarkan Worker dengan verifikasi sandi."""
+        # Verifikasi sandi Master (jika passcode dikonfigurasi)
+        if self.master.passcode:
+            worker_passcode = msg.get("passcode") or msg.get("auth_key")
+            if worker_passcode != self.master.passcode:
+                logger.warning(
+                    f"Koneksi Worker dari {self.addr} DITOLAK: Sandi salah "
+                    f"(diterima: '{worker_passcode}', dibutuhkan: '{self.master.passcode}')"
+                )
+                send_message(self.conn, MsgType.ERROR, {
+                    "code": "AUTH_FAILED",
+                    "message": "Sandi Master salah! Akses ditolak oleh Master.",
+                })
+                return
+
         self.worker_id = msg["worker_id"]
         winfo = WorkerInfo(
             worker_id = self.worker_id,
@@ -328,6 +344,7 @@ class MasterServer:
         self.output_dir    = cfg["output_dir"]
         self.max_retries   = cfg["max_retries"]
         self.expected_workers = cfg.get("expected_workers")
+        self.passcode      = cfg.get("passcode")
 
         self.worker_registry: Dict[str, WorkerInfo] = {}
         self.worker_sockets:  Dict[str, socket.socket] = {}
@@ -341,6 +358,7 @@ class MasterServer:
 
         self._running = False
         self._server_sock: Optional[socket.socket] = None
+        self.beacon: Optional[MasterBeacon]        = None
 
     def prepare(self, tasks, all_tasks_dict) -> None:
         """Inisialisasi scheduler, collector, fault monitor."""
@@ -370,6 +388,11 @@ class MasterServer:
         self._server_sock.listen(32)
         self._running = True
         logger.info(f"Master mendengarkan di {self.host}:{self.port} [mode={self.mode}]")
+
+        # Mulai siaran UDP Auto-Discovery beacon dengan passcode
+        self.beacon = MasterBeacon(tcp_port=self.port, passcode=self.passcode)
+        self.beacon.start_beacon()
+
         self._server_sock.settimeout(1.0)
         while self._running:
             try:
@@ -384,6 +407,8 @@ class MasterServer:
 
     def stop(self) -> None:
         self._running = False
+        if self.beacon:
+            self.beacon.stop_beacon()
         if self._server_sock:
             try:
                 self._server_sock.close()
@@ -430,7 +455,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Master Node — Distributed Data Compression")
     p.add_argument("--host",         default=DEFAULTS["host"])
     p.add_argument("--port",         type=int, default=DEFAULTS["port"])
-    p.add_argument("--input-dir",    required=True, help="Direktori file yang akan dikompresi")
+    p.add_argument("--input-dir",    default="data/sample",
+                   help="Direktori file yang akan dikompresi (default: data/sample)")
     p.add_argument("--output-dir",   default="results/output")
     p.add_argument("--algorithm",    default=DEFAULTS["algorithm"],
                    choices=["lzma","bz2","gzip","zlib","zstd"])
@@ -443,6 +469,10 @@ def parse_args() -> argparse.Namespace:
                    choices=["socket","shared_fs"])
     p.add_argument("--expected-workers", type=int, default=None,
                    help="Jumlah Worker yang ditunggu sebelum mendistribusikan task (mode static)")
+    p.add_argument("--passcode", "--auth-key", default=None, dest="passcode",
+                   help="Sandi verifikasi Master untuk mengunci Worker ke cluster ini")
+    p.add_argument("--no-auth", action="store_true", default=False,
+                   help="Nonaktifkan verifikasi sandi")
     p.add_argument("--max-retries",  type=int, default=DEFAULTS["max_retries"])
     p.add_argument("--log-level",    default=DEFAULTS["log_level"])
     p.add_argument("--config",       default=None, help="Path file config JSON")
@@ -467,6 +497,8 @@ def load_config(args) -> dict:
     cfg["mode"]          = args.mode
     cfg["transfer_mode"] = args.transfer
     cfg["expected_workers"] = args.expected_workers
+    cfg["passcode"]      = args.passcode
+    cfg["no_auth"]       = args.no_auth
     cfg["max_retries"]   = args.max_retries
     cfg["log_level"]     = args.log_level
     return cfg
@@ -480,16 +512,58 @@ def main() -> None:
     args = parse_args()
     cfg  = load_config(args)
 
+    # Inisialisasi passcode / sandi Master
+    if cfg.get("no_auth"):
+        cfg["passcode"] = None
+    elif not cfg.get("passcode"):
+        if sys.stdin.isatty():
+            print("\n" + "="*64)
+            print("🔐  PENGATURAN KEAMANAN CLUSTER MASTER")
+            print("="*64)
+            print("Masukkan sandi untuk cluster ini agar Worker hanya terhubung ke Master ini.")
+            try:
+                user_pass = input("👉 Masukkan sandi Master [Tekan Enter untuk PIN acak]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                user_pass = ""
+            if user_pass:
+                cfg["passcode"] = user_pass
+            else:
+                import random
+                cfg["passcode"] = str(random.randint(100000, 999999))
+        else:
+            import random
+            cfg["passcode"] = str(random.randint(100000, 999999))
+
+    # Tampilkan banner sandi Master secara jelas
+    print("\n" + "="*64)
+    print("🚀 MASTER DISTRIBUTED COMPRESSION AKTIF")
+    if cfg.get("passcode"):
+        print(f"🔑 SANDI MASTER : {cfg['passcode']}")
+        print(f"👉 Masukkan sandi '{cfg['passcode']}' pada setiap Worker agar terhubung!")
+    else:
+        print("🔓 MODE TANPA SANDI (Worker dapat bergabung bebas)")
+    print("="*64 + "\n")
+
     setup_logging("master", cfg["log_level"],
                   log_file=os.path.join(cfg["output_dir"], "master.jsonl"))
 
     logger.info("=== MASTER NODE DIMULAI ===")
+    if cfg.get("passcode"):
+        logger.info(f"Sandi Keamanan Master: {cfg['passcode']}")
     logger.info(f"Input  : {cfg['input_dir']}")
     logger.info(f"Output : {cfg['output_dir']}")
     logger.info(f"Algo   : {cfg['algorithm']} level={cfg['level']}")
     logger.info(f"Mode   : {cfg['mode']}")
 
     # --- Komponen a: Task Decomposition ---
+    if not os.path.isdir(cfg["input_dir"]) or not os.listdir(cfg["input_dir"]):
+        logger.info(f"Direktori input '{cfg['input_dir']}' belum ada/kosong. Membuat data sintetis sampel otomatis...")
+        try:
+            from data.generate_synthetic import generate
+            generate(cfg["input_dir"], num_small=20, num_large=2)
+        except Exception as e:
+            logger.warning(f"Gagal generate data otomatis: {e}")
+
     logger.info("Mendekomposisi file menjadi task...")
     tasks = decompose_directory(
         cfg["input_dir"], cfg["chunk_size"],

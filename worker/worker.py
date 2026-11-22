@@ -35,18 +35,20 @@ if _ROOT not in sys.path:
 from common.protocol import send_message, recv_message, MsgType
 from common.tasks import Task, TaskResult
 from common.utils import setup_logging, format_bytes
+from common.discovery import discover_master
 from worker.executor import WorkerExecutor
 from worker.monitor import ResourceMonitor
 
 logger = logging.getLogger("worker")
 
 DEFAULTS = {
-    "master_host":        "127.0.0.1",
+    "master_host":        "auto",
     "master_port":        9000,
     "num_procs":          None,          # default: os.cpu_count()
     "heartbeat_interval": 2.0,
     "reconnect_delay":    3.0,
     "max_reconnect":      10,
+    "passcode":           None,
     "log_level":          "INFO",
     "throttle":           0.0,
     "crash_after":        None,
@@ -63,6 +65,7 @@ class WorkerNode:
         self.master_host = cfg["master_host"]
         self.master_port = cfg["master_port"]
         self.worker_id   = cfg.get("worker_id") or f"w-{socket.gethostname()}"
+        self.passcode    = cfg.get("passcode")
         self.transfer_mode = "socket"  # diperbarui saat REGISTER_ACK
 
         self.executor = WorkerExecutor(
@@ -99,7 +102,26 @@ class WorkerNode:
     # ------------------------------------------------------------------
 
     def connect(self) -> bool:
-        """Hubungkan ke Master dengan backoff."""
+        """Hubungkan ke Master dengan dukungan Auto-Discovery dan backoff."""
+        if self.master_host == "auto":
+            if self.passcode:
+                logger.info(f"Mencari Master dengan sandi '{self.passcode}' di LAN (UDP Broadcast)...")
+            else:
+                logger.info("Mencari Master secara otomatis di jaringan lokal (UDP Broadcast)...")
+            found = discover_master(timeout=3.5, passcode=self.passcode)
+            if found:
+                self.master_host, self.master_port = found
+                logger.info(f"-> Berhasil menemukan Master di {self.master_host}:{self.master_port}")
+            else:
+                if self.passcode:
+                    logger.warning(
+                        f"Master dengan sandi '{self.passcode}' belum merespons broadcast. "
+                        f"Mencoba fallback ke 127.0.0.1:{self.master_port}..."
+                    )
+                else:
+                    logger.warning("Master tidak merespons broadcast. Mencoba fallback ke 127.0.0.1...")
+                self.master_host = "127.0.0.1"
+
         delay = self._cfg.get("reconnect_delay", 3.0)
         max_tries = self._cfg.get("max_reconnect", 10)
         for attempt in range(1, max_tries + 1):
@@ -112,8 +134,13 @@ class WorkerNode:
                 logger.info(f"Terhubung ke Master {self.master_host}:{self.master_port}")
                 return True
             except (OSError, ConnectionRefusedError) as e:
+                # Jika sebelumnya gagal konek pada host auto, coba discover ulang
+                if self._cfg.get("master_host") == "auto" and attempt % 2 == 0:
+                    found = discover_master(timeout=2.0, passcode=self.passcode)
+                    if found:
+                        self.master_host, self.master_port = found
                 logger.warning(
-                    f"Gagal konek (percobaan {attempt}/{max_tries}): {e}. "
+                    f"Gagal konek ke {self.master_host}:{self.master_port} (percobaan {attempt}/{max_tries}): {e}. "
                     f"Coba lagi dalam {delay:.0f}s..."
                 )
                 time.sleep(delay)
@@ -121,7 +148,7 @@ class WorkerNode:
         return False
 
     def register(self) -> bool:
-        """Kirim REGISTER ke Master."""
+        """Kirim REGISTER ke Master dengan verifikasi sandi."""
         try:
             import os as _os
             num_cores = _os.cpu_count() or 1
@@ -138,6 +165,7 @@ class WorkerNode:
                 "num_cores": num_cores,
                 "ram_gb":    round(ram_gb, 2),
                 "num_procs": self.executor.num_procs,
+                "passcode":  self.passcode,
             })
             msg, _ = recv_message(self._sock)
             if msg.get("type") == MsgType.REGISTER_ACK:
@@ -147,6 +175,10 @@ class WorkerNode:
                     f"[transfer={self.transfer_mode}]"
                 )
                 return True
+            elif msg.get("type") == MsgType.ERROR:
+                err_msg = msg.get("message", "Akses ditolak")
+                logger.error(f"❌ Registrasi DITOLAK oleh Master: {err_msg}")
+                return False
             return False
         except Exception as e:
             logger.error(f"Gagal register: {e}")
@@ -373,6 +405,8 @@ def parse_args() -> argparse.Namespace:
                    help="Crash setelah N task selesai (simulasi fault)")
     p.add_argument("--crash-at",     type=float, default=None,
                    help="Crash setelah N detik (simulasi fault)")
+    p.add_argument("--passcode", "--auth-key", default=None, dest="passcode",
+                   help="Sandi Master untuk bergabung ke cluster tertentu")
     p.add_argument("--heartbeat",    type=float, default=DEFAULTS["heartbeat_interval"])
     p.add_argument("--log-level",    default=DEFAULTS["log_level"])
     p.add_argument("--config",       default=None)
@@ -391,16 +425,6 @@ def main() -> None:
         with open(args.config) as f:
             cfg.update(json.load(f))
 
-    cfg["master_host"]        = args.master_host
-    cfg["master_port"]        = args.master_port
-    cfg["worker_id"]          = args.worker_id
-    cfg["num_procs"]          = args.procs
-    cfg["throttle"]           = args.throttle
-    cfg["crash_after"]        = args.crash_after
-    cfg["crash_at"]           = args.crash_at
-    cfg["heartbeat_interval"] = args.heartbeat
-    cfg["log_level"]          = args.log_level
-
     worker_id = cfg.get("worker_id") or f"w-{socket.gethostname()}"
     setup_logging("worker", cfg["log_level"],
                   log_file=f"results/logs/worker-{worker_id}.jsonl")
@@ -409,12 +433,66 @@ def main() -> None:
     logger.info(f"Master: {cfg['master_host']}:{cfg['master_port']}")
     logger.info(f"Procs : {cfg.get('num_procs') or os.cpu_count()}")
 
-    node = WorkerNode(cfg)
-    if not node.connect():
-        logger.error("Tidak bisa terhubung ke Master. Keluar.")
-        sys.exit(1)
-    if not node.register():
-        logger.error("Gagal register ke Master. Keluar.")
+    MAX_AUTH_ATTEMPTS = 3
+    node: Optional[WorkerNode] = None
+
+    for attempt in range(1, MAX_AUTH_ATTEMPTS + 1):
+        if args.passcode is not None:
+            cfg["passcode"] = args.passcode
+        else:
+            print("\n" + "="*56)
+            print(f"🔐  KONEKSI WORKER KE MASTER (Percobaan {attempt}/{MAX_AUTH_ATTEMPTS})")
+            print("="*56)
+            try:
+                user_pass = input("👉 Masukkan sandi Master: ").strip()
+                cfg["passcode"] = user_pass if user_pass else None
+            except (EOFError, KeyboardInterrupt):
+                print("\n[!] Dibatalkan oleh pengguna.")
+                sys.exit(0)
+            print("="*56 + "\n")
+
+            # Reset host dan port ke nilai awal jika percobaan sebelumnya fallback
+            cfg["master_host"] = args.master_host
+            cfg["master_port"] = args.master_port
+
+        if cfg.get("passcode"):
+            logger.info(f"Mencoba autentikasi dengan sandi Master: {cfg['passcode']}")
+
+        node = WorkerNode(cfg)
+        connected = node.connect()
+        if not connected:
+            if args.passcode is None and attempt < MAX_AUTH_ATTEMPTS:
+                print(f"⚠️  Master dengan sandi tersebut tidak ditemukan / tidak merespons. Sisa percobaan: {MAX_AUTH_ATTEMPTS - attempt}x\n")
+                continue
+            elif args.passcode is None:
+                print(f"\n❌ Anda telah salah memasukkan sandi sebanyak {MAX_AUTH_ATTEMPTS} kali.")
+                print("⛔ Program dihentikan demi keamanan. Silakan jalankan 'python worker.py' kembali.\n")
+                sys.exit(1)
+            else:
+                logger.error("Tidak bisa terhubung ke Master. Keluar.")
+                sys.exit(1)
+
+        registered = node.register()
+        if registered:
+            break
+        else:
+            if node._sock:
+                try:
+                    node._sock.close()
+                except OSError:
+                    pass
+            if args.passcode is None and attempt < MAX_AUTH_ATTEMPTS:
+                print(f"❌ Sandi salah atau ditolak oleh Master! Sisa percobaan: {MAX_AUTH_ATTEMPTS - attempt}x\n")
+                continue
+            elif args.passcode is None:
+                print(f"\n❌ Anda telah salah memasukkan sandi sebanyak {MAX_AUTH_ATTEMPTS} kali.")
+                print("⛔ Program dihentikan demi keamanan. Silakan jalankan 'python worker.py' kembali.\n")
+                sys.exit(1)
+            else:
+                logger.error("Gagal register ke Master. Keluar.")
+                sys.exit(1)
+
+    if not node:
         sys.exit(1)
 
     node.run()

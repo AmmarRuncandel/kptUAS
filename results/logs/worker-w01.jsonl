@@ -1,9 +1,0 @@
-{"timestamp": 1795354312.326015, "level": "INFO", "logger": "worker", "message": "=== WORKER w01 DIMULAI ==="}
-{"timestamp": 1795354312.326015, "level": "INFO", "logger": "worker", "message": "Master: 127.0.0.1:19100"}
-{"timestamp": 1795354312.326015, "level": "INFO", "logger": "worker", "message": "Procs : 2"}
-{"timestamp": 1795354312.326015, "level": "INFO", "logger": "worker", "message": "Terhubung ke Master 127.0.0.1:19100"}
-{"timestamp": 1795354312.3428102, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai w01 [transfer=socket]"}
-{"timestamp": 1795354312.3614986, "level": "INFO", "logger": "worker.executor", "message": "[w01] ProcessPoolExecutor dimulai (procs=2, throttle=0%)"}
-{"timestamp": 1795354313.9565046, "level": "INFO", "logger": "worker", "message": "Menunggu task yang masih berjalan selesai..."}
-{"timestamp": 1795354314.4052777, "level": "INFO", "logger": "worker.executor", "message": "[w01] ProcessPoolExecutor dihentikan"}
-{"timestamp": 1795354314.4075136, "level": "INFO", "logger": "worker", "message": "=== WORKER w01 SELESAI (task=11) ==="}
