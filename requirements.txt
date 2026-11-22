@@ -1,0 +1,11 @@
+psutil>=5.9.0
+matplotlib>=3.7.0
+pandas>=2.0.0
+zstandard>=0.21.0; python_version >= "3.8"
+
+# Catatan:
+# - psutil: wajib di Worker (monitoring CPU/memori)
+# - matplotlib + pandas: hanya di Master/komputer analisis (bukan di Worker)
+# - zstandard: opsional; fallback ke lzma jika tidak tersedia
+# - Semua modul lain (socket, threading, multiprocessing, lzma, bz2, gzip, zlib,
+#   hashlib, json, argparse, logging, struct) sudah tersedia di Python standard library

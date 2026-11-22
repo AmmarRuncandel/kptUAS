@@ -1,0 +1,11 @@
+mode,num_processes,num_workers,tasks,execution_time,total_original,total_compressed,ratio,throughput_mbs,throughput_fps,algorithm,level,run,scenario,num_procs,speedup,efficiency
+local_parallel,1,1,24,1.9946,4441178,1514604,2.9322,2.123,12.033,lzma,6,1,b_local_parallel,1,0.8196,0.8196
+local_parallel,1,1,24,2.1671,4441178,1514604,2.9322,1.954,11.074,lzma,6,2,b_local_parallel,1,0.7543,0.7543
+local_parallel,2,1,24,1.2524,4441178,1514604,2.9322,3.382,19.163,lzma,6,1,b_local_parallel,2,1.3053,0.6526
+local_parallel,2,1,24,1.298,4441178,1514604,2.9322,3.263,18.489,lzma,6,2,b_local_parallel,2,1.2594,0.6297
+local_parallel,4,1,24,0.8661,4441178,1514604,2.9322,4.89,27.71,lzma,6,1,b_local_parallel,4,1.8874,0.4719
+local_parallel,4,1,24,0.8792,4441178,1514604,2.9322,4.817,27.296,lzma,6,2,b_local_parallel,4,1.8593,0.4648
+local_parallel,8,1,24,0.8476,4441178,1514604,2.9322,4.997,28.316,lzma,6,1,b_local_parallel,8,1.9286,0.2411
+local_parallel,8,1,24,0.8389,4441178,1514604,2.9322,5.049,28.608,lzma,6,2,b_local_parallel,8,1.9486,0.2436
+local_parallel,12,1,24,0.898,4441178,1514604,2.9322,4.717,26.726,lzma,6,1,b_local_parallel,12,1.8204,0.1517
+local_parallel,12,1,24,0.9061,4441178,1514604,2.9322,4.674,26.487,lzma,6,2,b_local_parallel,12,1.8041,0.1503

@@ -1,0 +1,23 @@
+{
+  "host": "0.0.0.0",
+  "port": 9000,
+  "algorithm": "lzma",
+  "level": 6,
+  "chunk_size_mb": 32,
+  "max_retries": 3,
+  "heartbeat_timeout": 10.0,
+  "heartbeat_interval": 2.0,
+  "mode": "dynamic",
+  "transfer_mode": "socket",
+  "log_level": "INFO",
+
+  "_comments": {
+    "algorithm": "lzma | bz2 | gzip | zlib | zstd",
+    "level": "1-9 (lzma: 0-9, bz2: 1-9, gzip: 1-9)",
+    "chunk_size_mb": "Ukuran chunk dalam MB (file lebih besar dipecah)",
+    "mode": "dynamic (pull-based, LPT) | static (round-robin di awal)",
+    "transfer_mode": "socket (kirim bytes lewat TCP) | shared_fs (NFS/SMB)",
+    "heartbeat_timeout": "Detik tanpa heartbeat sebelum Worker dinyatakan DEAD",
+    "log_level": "DEBUG | INFO | WARNING | ERROR"
+  }
+}

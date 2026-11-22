@@ -1,0 +1,44 @@
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "=== MASTER NODE DIMULAI ==="}
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "Input  : data/sample"}
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "Output : results/output_test"}
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "Algo   : lzma level=6"}
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "Mode   : dynamic"}
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "Mendekomposisi file menjadi task..."}
+{"timestamp": 1795354310.2599554, "level": "INFO", "logger": "master", "message": "Total task: 24"}
+{"timestamp": 1795354310.3021183, "level": "INFO", "logger": "master.scheduler", "message": "Scheduler mode=dynamic, total_tasks=24"}
+{"timestamp": 1795354310.3021183, "level": "INFO", "logger": "master.fault_monitor", "message": "FaultMonitor dimulai"}
+{"timestamp": 1795354310.3021183, "level": "INFO", "logger": "master", "message": "Master mendengarkan di 127.0.0.1:19100 [mode=dynamic]"}
+{"timestamp": 1795354310.3082838, "level": "INFO", "logger": "master", "message": "Menunggu task selesai... (Ctrl+C untuk berhenti)"}
+{"timestamp": 1795354312.326015, "level": "INFO", "logger": "master", "message": "Koneksi baru dari ('127.0.0.1', 52964)"}
+{"timestamp": 1795354312.3428102, "level": "INFO", "logger": "master", "message": "Worker TERDAFTAR: w01 @ 192.168.56.1 (cores=12, procs=2)"}
+{"timestamp": 1795354312.3591802, "level": "INFO", "logger": "master", "message": "Koneksi baru dari ('127.0.0.1', 52965)"}
+{"timestamp": 1795354312.3614986, "level": "INFO", "logger": "master", "message": "Worker TERDAFTAR: w02 @ 192.168.56.1 (cores=12, procs=2)"}
+{"timestamp": 1795354312.9099367, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0005.log (1 chunk) \u2192 results/output_test\\small_0005.log.compressed"}
+{"timestamp": 1795354312.9310617, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0019.txt (1 chunk) \u2192 results/output_test\\small_0019.txt.compressed"}
+{"timestamp": 1795354313.0252752, "level": "INFO", "logger": "master.collector", "message": "File selesai: large_00.log (2 chunk) \u2192 results/output_test\\large_00.log.compressed"}
+{"timestamp": 1795354313.0252752, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0016.txt (1 chunk) \u2192 results/output_test\\small_0016.txt.compressed"}
+{"timestamp": 1795354313.0252752, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0002.log (1 chunk) \u2192 results/output_test\\small_0002.log.compressed"}
+{"timestamp": 1795354313.04305, "level": "INFO", "logger": "master.collector", "message": "File selesai: large_01.log (2 chunk) \u2192 results/output_test\\large_01.log.compressed"}
+{"timestamp": 1795354313.04305, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0013.csv (1 chunk) \u2192 results/output_test\\small_0013.csv.compressed"}
+{"timestamp": 1795354313.04305, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0006.txt (1 chunk) \u2192 results/output_test\\small_0006.txt.compressed"}
+{"timestamp": 1795354313.1249707, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0000.csv (1 chunk) \u2192 results/output_test\\small_0000.csv.compressed"}
+{"timestamp": 1795354313.1249707, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0007.csv (1 chunk) \u2192 results/output_test\\small_0007.csv.compressed"}
+{"timestamp": 1795354313.1582642, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0017.csv (1 chunk) \u2192 results/output_test\\small_0017.csv.compressed"}
+{"timestamp": 1795354313.1582642, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0009.txt (1 chunk) \u2192 results/output_test\\small_0009.txt.compressed"}
+{"timestamp": 1795354313.2414708, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0014.csv (1 chunk) \u2192 results/output_test\\small_0014.csv.compressed"}
+{"timestamp": 1795354313.2439172, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0018.txt (1 chunk) \u2192 results/output_test\\small_0018.txt.compressed"}
+{"timestamp": 1795354313.260004, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0001.txt (1 chunk) \u2192 results/output_test\\small_0001.txt.compressed"}
+{"timestamp": 1795354313.260004, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0012.log (1 chunk) \u2192 results/output_test\\small_0012.log.compressed"}
+{"timestamp": 1795354313.3423834, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0015.log (1 chunk) \u2192 results/output_test\\small_0015.log.compressed"}
+{"timestamp": 1795354313.3423834, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0010.txt (1 chunk) \u2192 results/output_test\\small_0010.txt.compressed"}
+{"timestamp": 1795354313.3589923, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0008.csv (1 chunk) \u2192 results/output_test\\small_0008.csv.compressed"}
+{"timestamp": 1795354313.4751344, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0003.txt (1 chunk) \u2192 results/output_test\\small_0003.txt.compressed"}
+{"timestamp": 1795354313.4751344, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0011.log (1 chunk) \u2192 results/output_test\\small_0011.log.compressed"}
+{"timestamp": 1795354313.4751344, "level": "INFO", "logger": "master.collector", "message": "File selesai: small_0004.log (1 chunk) \u2192 results/output_test\\small_0004.log.compressed"}
+{"timestamp": 1795354314.3254213, "level": "INFO", "logger": "master", "message": "SHUTDOWN dikirim ke w01"}
+{"timestamp": 1795354314.3254213, "level": "INFO", "logger": "master", "message": "SHUTDOWN dikirim ke w02"}
+{"timestamp": 1795354316.3395443, "level": "INFO", "logger": "master.fault_monitor", "message": "FaultMonitor dihentikan"}
+{"timestamp": 1795354316.3439748, "level": "INFO", "logger": "master.collector", "message": "Ringkasan disimpan ke results/output_test\\summary.json"}
+{"timestamp": 1795354316.3439748, "level": "INFO", "logger": "master", "message": "Recovery Time stats: {'count': 0, 'mean': 0.0, 'max': 0.0, 'min': 0.0}"}
+{"timestamp": 1795354316.3439748, "level": "INFO", "logger": "master", "message": "Imbalance (CV=0.0833, max/min=1.1818)"}
+{"timestamp": 1795354316.3439748, "level": "INFO", "logger": "master", "message": "=== MASTER SELESAI ==="}
