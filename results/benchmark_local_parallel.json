@@ -1,0 +1,276 @@
+{
+  "scenario": "local_parallel",
+  "T1": 1.0,
+  "variants": [
+    {
+      "num_procs": 1,
+      "runs": [
+        {
+          "mode": "local_parallel",
+          "num_processes": 1,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 2.1498,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 1.97,
+          "throughput_fps": 10.234,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 1
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 1,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 2.1348,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 1.984,
+          "throughput_fps": 10.306,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 2
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 1,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 2.1607,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 1.96,
+          "throughput_fps": 10.182,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 3
+        }
+      ],
+      "mean_time": 2.1484,
+      "std_time": 0.0106,
+      "speedup": 0.4655,
+      "efficiency": 0.4655
+    },
+    {
+      "num_procs": 2,
+      "runs": [
+        {
+          "mode": "local_parallel",
+          "num_processes": 2,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.2684,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.339,
+          "throughput_fps": 17.345,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 1
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 2,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.2813,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.306,
+          "throughput_fps": 17.17,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 2
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 2,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.2685,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.339,
+          "throughput_fps": 17.344,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 3
+        }
+      ],
+      "mean_time": 1.2727,
+      "std_time": 0.0061,
+      "speedup": 0.7857,
+      "efficiency": 0.3928
+    },
+    {
+      "num_procs": 4,
+      "runs": [
+        {
+          "mode": "local_parallel",
+          "num_processes": 4,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.2447,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.403,
+          "throughput_fps": 17.676,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 1
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 4,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.1845,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.576,
+          "throughput_fps": 18.573,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 2
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 4,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.1327,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.739,
+          "throughput_fps": 19.423,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 3
+        }
+      ],
+      "mean_time": 1.1873,
+      "std_time": 0.0458,
+      "speedup": 0.8422,
+      "efficiency": 0.2105
+    },
+    {
+      "num_procs": 8,
+      "runs": [
+        {
+          "mode": "local_parallel",
+          "num_processes": 8,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.1059,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.83,
+          "throughput_fps": 19.893,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 1
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 8,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.1207,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.779,
+          "throughput_fps": 19.631,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 2
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 8,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.1428,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.706,
+          "throughput_fps": 19.25,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 3
+        }
+      ],
+      "mean_time": 1.1231,
+      "std_time": 0.0152,
+      "speedup": 0.8904,
+      "efficiency": 0.1113
+    },
+    {
+      "num_procs": 12,
+      "runs": [
+        {
+          "mode": "local_parallel",
+          "num_processes": 12,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.2254,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.456,
+          "throughput_fps": 17.954,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 1
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 12,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.303,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.25,
+          "throughput_fps": 16.884,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 2
+        },
+        {
+          "mode": "local_parallel",
+          "num_processes": 12,
+          "num_workers": 1,
+          "tasks": 22,
+          "execution_time": 1.3877,
+          "total_original": 4441178,
+          "total_compressed": 1511124,
+          "ratio": 2.939,
+          "throughput_mbs": 3.052,
+          "throughput_fps": 15.854,
+          "algorithm": "lzma",
+          "level": 6,
+          "run": 3
+        }
+      ],
+      "mean_time": 1.3054,
+      "std_time": 0.0663,
+      "speedup": 0.7661,
+      "efficiency": 0.0638
+    }
+  ]
+}

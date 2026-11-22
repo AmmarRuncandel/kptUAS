@@ -1,0 +1,10 @@
+{"timestamp": 1795355365.0719895, "level": "INFO", "logger": "worker", "message": "=== WORKER survive_w02 DIMULAI ==="}
+{"timestamp": 1795355365.072569, "level": "INFO", "logger": "worker", "message": "Master: 127.0.0.1:9006"}
+{"timestamp": 1795355365.072569, "level": "INFO", "logger": "worker", "message": "Procs : 12"}
+{"timestamp": 1795355365.0736923, "level": "INFO", "logger": "worker", "message": "Terhubung ke Master 127.0.0.1:9006"}
+{"timestamp": 1795355365.0809557, "level": "INFO", "logger": "worker", "message": "Terdaftar sebagai survive_w02 [transfer=socket]"}
+{"timestamp": 1795355365.0934546, "level": "INFO", "logger": "worker.executor", "message": "[survive_w02] ProcessPoolExecutor dimulai (procs=12, throttle=0%)"}
+{"timestamp": 1795355381.9153013, "level": "ERROR", "logger": "worker", "message": "Koneksi terputus: [WinError 10054] An existing connection was forcibly closed by the remote host"}
+{"timestamp": 1795355381.9161124, "level": "INFO", "logger": "worker", "message": "Menunggu task yang masih berjalan selesai..."}
+{"timestamp": 1795355382.2830794, "level": "INFO", "logger": "worker.executor", "message": "[survive_w02] ProcessPoolExecutor dihentikan"}
+{"timestamp": 1795355382.2854538, "level": "INFO", "logger": "worker", "message": "=== WORKER survive_w02 SELESAI (task=18) ==="}
