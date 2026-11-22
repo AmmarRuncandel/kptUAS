@@ -175,6 +175,9 @@ class WorkerHandler(threading.Thread):
             "mode":      self.master.mode,
             "transfer":  self.master.transfer_mode,
         })
+        # Jika Master masih di lobi persiapan, cetak realtime tabel Worker
+        if not self.master.job_started:
+            self.master.print_worker_table()
 
     def _handle_request_task(self, msg: dict) -> None:
         """Komponen d: REQUEST_TASK — kirim task berikutnya."""
@@ -185,6 +188,11 @@ class WorkerHandler(threading.Thread):
         winfo = self.master.worker_registry.get(self.worker_id)
         if not winfo:
             send_message(self.conn, MsgType.ERROR, {"message": "Worker tidak dikenal"})
+            return
+
+        # Jika Master belum memulai pekerjaan (masih menunggu di lobi), minta Worker standby
+        if not self.master.job_started:
+            send_message(self.conn, MsgType.NO_MORE_TASKS, {"wait": True})
             return
 
         # Pada mode static, jika expected_workers ditentukan, tunggu sampai semua worker terhubung
@@ -324,6 +332,8 @@ class WorkerHandler(threading.Thread):
             logger.warning(
                 f"Worker {self.worker_id} disconnect: {requeued_count} task di-requeue"
             )
+            if not self.master.job_started:
+                self.master.print_worker_table()
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +355,7 @@ class MasterServer:
         self.max_retries   = cfg["max_retries"]
         self.expected_workers = cfg.get("expected_workers")
         self.passcode      = cfg.get("passcode")
+        self.job_started   = cfg.get("job_started", True)
 
         self.worker_registry: Dict[str, WorkerInfo] = {}
         self.worker_sockets:  Dict[str, socket.socket] = {}
@@ -426,9 +437,30 @@ class MasterServer:
             except OSError:
                 pass
 
+    def print_worker_table(self) -> None:
+        """Tampilkan daftar Worker yang sudah terhubung secara realtime di lobi."""
+        with self._registry_lock:
+            workers = [w for w in self.worker_registry.values() if w.alive]
+
+        print("\n" + "="*76)
+        print(f"👥 [LOBBY WORKER] {len(workers)} Node Terhubung & Standby")
+        print("="*76)
+        print(f"{'No':<3} | {'Worker ID':<22} | {'IP Address':<16} | {'CPU Cores':<10} | {'RAM (GB)':<8}")
+        print("-"*76)
+        for idx, w in enumerate(workers, 1):
+            print(f"{idx:<3} | {w.worker_id:<22} | {w.ip:<16} | {w.num_cores:<10} | {w.ram_gb:<8.1f}")
+        print("="*76)
+        if not self.job_started:
+            print("👉 Tekan [ENTER] jika semua Worker sudah terhubung untuk MULAI KOMPRESI!")
+            print("="*76 + "\n")
+
     def run_dashboard(self, interval: float = 2.0) -> None:
         """Dashboard teks ringkas di terminal (untuk video demo)."""
-        while not (self.scheduler and self.scheduler.is_all_done()):
+        # Tunggu sampai pekerjaan benar-benar dimulai oleh Master
+        while not self.job_started and self._running:
+            time.sleep(0.5)
+
+        while not (self.scheduler and self.scheduler.is_all_done()) and self._running:
             if self.scheduler and self.collector:
                 prog = self.collector.get_progress()
                 sched = self.scheduler.get_summary()
@@ -455,8 +487,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Master Node — Distributed Data Compression")
     p.add_argument("--host",         default=DEFAULTS["host"])
     p.add_argument("--port",         type=int, default=DEFAULTS["port"])
-    p.add_argument("--input-dir",    default="data/sample",
-                   help="Direktori file yang akan dikompresi (default: data/sample)")
+    p.add_argument("--input-dir",    default=None,
+                   help="Direktori file yang akan dikompresi (default: pilih interaktif atau data/sample)")
     p.add_argument("--output-dir",   default="results/output")
     p.add_argument("--algorithm",    default=DEFAULTS["algorithm"],
                    choices=["lzma","bz2","gzip","zlib","zstd"])
@@ -473,6 +505,10 @@ def parse_args() -> argparse.Namespace:
                    help="Sandi verifikasi Master untuk mengunci Worker ke cluster ini")
     p.add_argument("--no-auth", action="store_true", default=False,
                    help="Nonaktifkan verifikasi sandi")
+    p.add_argument("--interactive", action="store_true", default=False,
+                   help="Paksa mode interaktif (meminta input sandi, folder, dan lobi)")
+    p.add_argument("--no-wait", action="store_true", default=False,
+                   help="Langsung mulai kompresi tanpa menunggu konfirmasi Enter di lobi")
     p.add_argument("--max-retries",  type=int, default=DEFAULTS["max_retries"])
     p.add_argument("--log-level",    default=DEFAULTS["log_level"])
     p.add_argument("--config",       default=None, help="Path file config JSON")
@@ -499,6 +535,8 @@ def load_config(args) -> dict:
     cfg["expected_workers"] = args.expected_workers
     cfg["passcode"]      = args.passcode
     cfg["no_auth"]       = args.no_auth
+    cfg["interactive"]   = args.interactive
+    cfg["no_wait"]       = args.no_wait
     cfg["max_retries"]   = args.max_retries
     cfg["log_level"]     = args.log_level
     return cfg
@@ -512,15 +550,19 @@ def main() -> None:
     args = parse_args()
     cfg  = load_config(args)
 
-    # Inisialisasi passcode / sandi Master
+    is_interactive = (sys.stdin.isatty() or args.interactive) and not cfg.get("no_wait")
+
+    # ------------------------------------------------------------------ #
+    # LANGKAH 1: Pengaturan Keamanan Sandi Cluster Master
+    # ------------------------------------------------------------------ #
     if cfg.get("no_auth"):
         cfg["passcode"] = None
     elif not cfg.get("passcode"):
-        if sys.stdin.isatty():
-            print("\n" + "="*64)
-            print("🔐  PENGATURAN KEAMANAN CLUSTER MASTER")
-            print("="*64)
-            print("Masukkan sandi untuk cluster ini agar Worker hanya terhubung ke Master ini.")
+        if is_interactive:
+            print("\n" + "="*68)
+            print("🔐  LANGKAH 1: PENGATURAN KEAMANAN CLUSTER MASTER")
+            print("="*68)
+            print("Masukkan sandi cluster agar Worker hanya terhubung ke Master ini.")
             try:
                 user_pass = input("👉 Masukkan sandi Master [Tekan Enter untuk PIN acak]: ").strip()
             except (EOFError, KeyboardInterrupt):
@@ -534,15 +576,50 @@ def main() -> None:
             import random
             cfg["passcode"] = str(random.randint(100000, 999999))
 
-    # Tampilkan banner sandi Master secara jelas
-    print("\n" + "="*64)
-    print("🚀 MASTER DISTRIBUTED COMPRESSION AKTIF")
-    if cfg.get("passcode"):
-        print(f"🔑 SANDI MASTER : {cfg['passcode']}")
-        print(f"👉 Masukkan sandi '{cfg['passcode']}' pada setiap Worker agar terhubung!")
-    else:
-        print("🔓 MODE TANPA SANDI (Worker dapat bergabung bebas)")
-    print("="*64 + "\n")
+    # ------------------------------------------------------------------ #
+    # LANGKAH 2: Pemilihan Folder yang Akan Dikompresi
+    # ------------------------------------------------------------------ #
+    if not cfg.get("input_dir"):
+        if is_interactive:
+            while True:
+                print("\n" + "="*68)
+                print("📁  LANGKAH 2: PILIH FOLDER YANG AKAN DIKOMPRESI")
+                print("="*68)
+                print("Masukkan path direktori folder file yang ingin dikompres.")
+                print("Contoh: D:\\FileKuliah\\Dataset atau data/sample")
+                print("[Tekan ENTER langsung untuk menggunakan sampel bawaan: data/sample]")
+                try:
+                    folder_input = input("👉 Path folder: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    folder_input = "data/sample"
+
+                if not folder_input:
+                    folder_input = "data/sample"
+
+                # Bersihkan tanda kutip jika user copy-paste path ber-kutip di Windows
+                folder_input = folder_input.strip('"').strip("'")
+
+                if not os.path.exists(folder_input):
+                    print(f"\n❌ ERROR: Folder '{folder_input}' TIDAK DITEMUKAN!")
+                    print("   Pastikan path folder benar dan coba lagi.\n")
+                    continue
+                if not os.path.isdir(folder_input):
+                    print(f"\n❌ ERROR: '{folder_input}' adalah file, bukan folder direktori!")
+                    print("   Silakan masukkan path direktori folder.\n")
+                    continue
+
+                # Cek isi folder
+                entries = os.listdir(folder_input)
+                if not entries:
+                    print(f"\n⚠️  PERINGATAN: Folder '{folder_input}' KOSONG (tidak berisi file)!")
+                    print("   Silakan masukkan folder yang memiliki file untuk dikompresi.\n")
+                    continue
+
+                cfg["input_dir"] = folder_input
+                print(f"✅ Folder valid dipilih: '{folder_input}' ({len(entries)} item terdeteksi).\n")
+                break
+        else:
+            cfg["input_dir"] = "data/sample"
 
     setup_logging("master", cfg["log_level"],
                   log_file=os.path.join(cfg["output_dir"], "master.jsonl"))
@@ -556,8 +633,8 @@ def main() -> None:
     logger.info(f"Mode   : {cfg['mode']}")
 
     # --- Komponen a: Task Decomposition ---
-    if not os.path.isdir(cfg["input_dir"]) or not os.listdir(cfg["input_dir"]):
-        logger.info(f"Direktori input '{cfg['input_dir']}' belum ada/kosong. Membuat data sintetis sampel otomatis...")
+    if cfg["input_dir"] == "data/sample" and (not os.path.isdir("data/sample") or not os.listdir("data/sample")):
+        logger.info("Membuat data sintetis sampel otomatis di data/sample...")
         try:
             from data.generate_synthetic import generate
             generate(cfg["input_dir"], num_small=20, num_large=2)
@@ -573,12 +650,18 @@ def main() -> None:
     all_tasks_dict = {t.task_id: t for t in tasks}
 
     if not tasks:
-        logger.error("Tidak ada file ditemukan di input_dir. Keluar.")
+        logger.error(f"Tidak ada file yang dapat dikompresi di '{cfg['input_dir']}'. Keluar.")
         sys.exit(1)
 
+    total_orig_bytes = sum(t.length for t in tasks)
     ensure_dir(cfg["output_dir"])
 
-    # --- Siapkan server ---
+    # ------------------------------------------------------------------ #
+    # LANGKAH 3: Inisialisasi Server & Lobi Persiapan Worker
+    # ------------------------------------------------------------------ #
+    # Jika interaktif: tahan pemberian task (job_started=False) sampai Master tekan Enter
+    cfg["job_started"] = not is_interactive
+
     server = MasterServer(cfg)
     server.prepare(tasks, all_tasks_dict)
 
@@ -592,6 +675,47 @@ def main() -> None:
     # Dashboard di thread terpisah
     dash_thread = threading.Thread(target=server.run_dashboard, daemon=True, name="dashboard")
     dash_thread.start()
+
+    # Tampilkan Banner Lobi Siap Koneksi
+    print("\n" + "="*76)
+    print("🚀 MASTER DISTRIBUTED COMPRESSION AKTIF (WAITING ROOM)")
+    print("="*76)
+    if cfg.get("passcode"):
+        print(f"🔑 SANDI MASTER    : {cfg['passcode']}")
+    else:
+        print("🔓 MODE KEAMANAN   : Bebas Akses (Tanpa Sandi)")
+    print(f"📁 FOLDER TARGET   : {cfg['input_dir']} ({len(tasks)} task, {format_bytes(total_orig_bytes)})")
+    print(f"🌐 STATUS          : Menunggu Worker bergabung di jaringan LAN...")
+    print("="*76)
+    print(f"👉 Di setiap laptop Worker, cukup jalankan: python worker.py")
+    if cfg.get("passcode"):
+        print(f"👉 Masukkan sandi: {cfg['passcode']}")
+    print("\n[INFO] Daftar Worker yang terhubung akan tampil secara realtime di bawah ini.")
+    print("👉 Tekan [ENTER] kapan saja jika Worker yang masuk sudah cukup untuk MULAI.")
+    print("="*76 + "\n")
+
+    # Tunggu konfirmasi Master untuk mulai jika sesi interaktif
+    if not server.job_started:
+        while True:
+            try:
+                input()
+            except (EOFError, KeyboardInterrupt):
+                print("\n[!] Dibatalkan oleh pengguna.")
+                server.stop()
+                sys.exit(0)
+
+            with server._registry_lock:
+                active_workers = [w for w in server.worker_registry.values() if w.alive]
+
+            if len(active_workers) == 0:
+                print("⚠️  Belum ada Worker yang terhubung! Tunggu minimal 1 Worker masuk...")
+                continue
+
+            server.job_started = True
+            print("\n" + "="*76)
+            print(f"🚀 MEMULAI PEKERJAAN! Kompresi didistribusikan ke {len(active_workers)} Worker...")
+            print("="*76 + "\n")
+            break
 
     # Tunggu semua task selesai
     start_ts = time.time()
