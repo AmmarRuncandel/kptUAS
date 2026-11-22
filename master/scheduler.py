@@ -71,6 +71,12 @@ class WorkerInfo:
         self.throughput_mbs: float = 0.0  # MB/detik terukur
         self.bytes_processed: int  = 0
         self.tasks_done:    int   = 0
+        self.tasks_failed:  int   = 0
+        self.corrupt_tasks: int   = 0
+        self.job_bytes:     int   = 0
+        self.job_tasks:     int   = 0
+        self.job_failed:    int   = 0
+        self.job_corrupt:   int   = 0
         self.tasks_assigned: int  = 0
         self.active_seconds: float = 0.0
         self.idle_seconds:  float  = 0.0
@@ -99,9 +105,18 @@ class WorkerInfo:
         self.active_tasks  = active_tasks
         self.alive         = True
 
+    def reset_job_stats(self) -> None:
+        """Reset statistik khusus untuk pekerjaan (job) baru."""
+        self.job_bytes   = 0
+        self.job_tasks   = 0
+        self.job_failed  = 0
+        self.job_corrupt = 0
+
     def record_task_done(self, bytes_processed: int, duration: float) -> None:
         self.bytes_processed += bytes_processed
         self.tasks_done      += 1
+        self.job_bytes       += bytes_processed
+        self.job_tasks       += 1
         self.active_seconds  += duration
         if duration > 0:
             mb = bytes_processed / (1024 * 1024)
@@ -110,6 +125,16 @@ class WorkerInfo:
                 self.throughput_mbs = mb / duration
             else:
                 self.throughput_mbs = 0.7 * self.throughput_mbs + 0.3 * (mb / duration)
+
+    def record_task_failed(self) -> None:
+        self.tasks_failed += 1
+        self.job_failed   += 1
+
+    def record_task_corrupt(self) -> None:
+        self.corrupt_tasks += 1
+        self.tasks_failed  += 1
+        self.job_corrupt   += 1
+        self.job_failed    += 1
 
 
 # ---------------------------------------------------------------------------

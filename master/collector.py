@@ -152,23 +152,46 @@ class ResultCollector:
             orig      = self._total_original
             comp      = self._total_compressed
             ratio     = orig / max(comp, 1)
-            workers   = {wid: {
-                "tasks_done":   wi.tasks_done,
-                "bytes":        wi.bytes_processed,
-                "throughput":   round(wi.throughput_mbs, 2),
-            } for wid, wi in worker_registry.items()}
+
+            workers = {}
+            for wid, wi in worker_registry.items():
+                j_bytes = getattr(wi, "job_bytes", wi.bytes_processed)
+                j_tasks = getattr(wi, "job_tasks", wi.tasks_done)
+                corrupt = getattr(wi, "job_corrupt", getattr(wi, "corrupt_tasks", 0))
+                failed  = getattr(wi, "job_failed", getattr(wi, "tasks_failed", 0))
+                pct     = round(100.0 * j_bytes / max(orig, 1), 1)
+
+                workers[wid] = {
+                    "ip":            wi.ip,
+                    "num_cores":     wi.num_cores,
+                    "tasks_done":    j_tasks,
+                    "tasks_failed":  failed,
+                    "corrupt_tasks": corrupt,
+                    "bytes":         j_bytes,
+                    "bytes_fmt":     format_bytes(j_bytes),
+                    "pct_workload":  pct,
+                    "throughput":    round(wi.throughput_mbs, 2),
+                    "integrity":     "100% VALID ✅" if corrupt == 0 else f"⚠️ {corrupt} CORRUPT",
+                }
+
+            total_corrupt = sum(w["corrupt_tasks"] for w in workers.values())
 
             return {
                 "total_files":       len(self._chunks),
                 "total_original":    format_bytes(orig),
                 "total_compressed":  format_bytes(comp),
+                "total_original_bytes": orig,
+                "total_compressed_bytes": comp,
                 "ratio":             round(ratio, 4),
+                "saved_pct":         round(100.0 * (1.0 - (comp / max(orig, 1))), 1),
                 "elapsed":           format_duration(elapsed),
                 "elapsed_seconds":   round(elapsed, 3),
                 "throughput_mbs":    round((orig / (1024**2)) / max(elapsed, 0.001), 2),
                 "worker_summary":    workers,
                 "retry_count":       retry_count,
-                "failed_tasks":      0,
+                "failed_tasks":      sum(w["tasks_failed"] for w in workers.values()),
+                "total_corrupt":     total_corrupt,
+                "cluster_integrity": "100% VALID (Tidak Ada Data Corrupt) ✅" if total_corrupt == 0 else f"⚠️ TERDETEKSI {total_corrupt} CHUNK CORRUPT",
             }
 
     def save_summary(self, summary: dict, path: str) -> None:

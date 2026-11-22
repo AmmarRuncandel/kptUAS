@@ -254,9 +254,6 @@ class WorkerNode:
                     self._handle_message(msg, binary)
 
                     if msg.get("type") == MsgType.NO_MORE_TASKS:
-                        if not msg.get("wait"):
-                            # Semua selesai
-                            break
                         time.sleep(no_task_wait)
                     elif msg.get("type") == MsgType.SHUTDOWN:
                         logger.info("Menerima SHUTDOWN dari Master")

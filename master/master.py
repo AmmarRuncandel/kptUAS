@@ -208,11 +208,8 @@ class WorkerHandler(threading.Thread):
         task = self.master.scheduler.get_task(winfo)
 
         if task is None:
-            if self.master.scheduler.is_all_done():
-                send_message(self.conn, MsgType.NO_MORE_TASKS, {})
-            else:
-                # Masih ada task sedang diproses; Worker tunggu sebentar
-                send_message(self.conn, MsgType.NO_MORE_TASKS, {"wait": True})
+            # Berikan wait: True agar Worker tetap standby hidup di jaringan (siap batch job berikutnya)
+            send_message(self.conn, MsgType.NO_MORE_TASKS, {"wait": True})
             return
 
         # Kirim task
@@ -267,8 +264,35 @@ class WorkerHandler(threading.Thread):
         winfo = self.master.worker_registry.get(self.worker_id)
 
         if result.status == "DONE":
-            # Simpan hasil
             compressed_data = binary or b""
+
+            # Verifikasi integritas container format & hash data
+            is_corrupt = False
+            try:
+                from common.compression import unpack_chunk_result
+                chunk_header = unpack_chunk_result(compressed_data)
+                if chunk_header.get("sha256_original") != result.sha256_original:
+                    is_corrupt = True
+            except Exception:
+                is_corrupt = True
+
+            if is_corrupt:
+                logger.error(
+                    f"⚠️ INTEGRITAS GAGAL: Chunk task {result.task_id[:8]} dari Worker {self.worker_id} CORRUPT! "
+                    f"Hash tidak cocok. Menolak hasil & me-requeue task."
+                )
+                if winfo:
+                    winfo.record_task_corrupt()
+                with self.master.scheduler._lock:
+                    task = self.master.scheduler._all_tasks.get(result.task_id)
+                    if task and task.is_retryable(self.master.scheduler.max_retries):
+                        task.status          = TaskStatus.PENDING
+                        task.assigned_worker = None
+                        self.master.scheduler._queue.appendleft(task)
+                        self.master.scheduler._assigned.pop(result.task_id, None)
+                return
+
+            # Simpan hasil jika valid
             is_new = self.master.collector.collect(result, compressed_data)
 
             if is_new:
@@ -295,6 +319,8 @@ class WorkerHandler(threading.Thread):
                 f"Task {result.task_id[:8]} GAGAL di {self.worker_id}: "
                 f"{result.error}"
             )
+            if winfo:
+                winfo.record_task_failed()
             # Requeue task ini saja
             with self.master.scheduler._lock:
                 task = self.master.scheduler._all_tasks.get(result.task_id)
@@ -454,6 +480,56 @@ class MasterServer:
             print("👉 Tekan [ENTER] jika semua Worker sudah terhubung untuk MULAI KOMPRESI!")
             print("="*76 + "\n")
 
+    def prepare_new_job(self, tasks, all_tasks_dict) -> None:
+        """Siapkan batch pekerjaan kompresi baru tanpa memutus koneksi Worker."""
+        self.job_started = False
+        self.scheduler = Scheduler(
+            tasks,
+            mode        = self.mode,
+            max_retries = self.max_retries,
+        )
+        self.collector = ResultCollector(self.output_dir, all_tasks_dict)
+        if self.fault_monitor:
+            self.fault_monitor.scheduler = self.scheduler
+
+        # Reset statistik per-job dan daftarkan kembali worker yang aktif ke scheduler baru
+        with self._registry_lock:
+            for winfo in self.worker_registry.values():
+                winfo.reset_job_stats()
+                if winfo.alive:
+                    self.scheduler.register_worker(winfo)
+
+    def print_detailed_report(self, summary: dict, job_index: int = 1, folder_path: str = "") -> None:
+        """Tampilkan rekap analisis komprehensif hasil pekerjaan dan integritas Worker."""
+        print("\n" + "="*84)
+        print(f"📊  LAPORAN FEEDBACK & REKAP HASIL PEKERJAAN #{job_index}")
+        print("="*84)
+        print(f"📁 Folder Sumber       : {folder_path} ({summary.get('total_files')} file)")
+        print(f"💾 Folder Penyimpanan  : {self.output_dir}/")
+        print(f"⚡ Algoritma Kompresi  : {summary.get('algorithm', 'lzma').upper()}")
+        print(f"⏱️ Waktu Eksekusi      : {summary.get('elapsed')}")
+        print(f"📦 Total Ukuran Asli   : {summary.get('total_original')}")
+        print(f"🗜️ Total Terkompresi   : {summary.get('total_compressed')}")
+        print(f"📉 Rasio Kompresi      : {summary.get('ratio')}x (Hemat: {summary.get('saved_pct', 0)}%)")
+        print(f"🚀 Throughput Cluster  : {summary.get('throughput_mbs')} MB/s")
+        print(f"🔁 Task Retry / Pulih  : {summary.get('retry_count')} kali")
+        print(f"🛡️ Status Integritas   : {summary.get('cluster_integrity')}")
+        print("-"*84)
+        print("👥 ANALISIS KINERJA & KESEHATAN PER WORKER:")
+        print("-"*84)
+        print(f"{'Worker ID':<20} | {'IP Address':<15} | {'Task (Ok/Fail)':<15} | {'Beban Data':<16} | {'Throughput':<12} | {'Integritas'}")
+        print("-"*84)
+        for wid, ws in summary.get("worker_summary", {}).items():
+            task_str = f"{ws.get('tasks_done', 0)} / {ws.get('tasks_failed', 0)}"
+            data_str = f"{ws.get('bytes_fmt', '0 B')} ({ws.get('pct_workload', 0)}%)"
+            thr_str  = f"{ws.get('throughput', 0):.2f} MB/s"
+            integ    = ws.get('integrity', '100% VALID ✅')
+            print(f"{wid:<20} | {ws.get('ip', '-'):<15} | {task_str:<15} | {data_str:<16} | {thr_str:<12} | {integ}")
+        print("="*84)
+        summary_path = os.path.join(self.output_dir, f"summary_job_{job_index}.json")
+        print(f"📄 Rekap lengkap tersimpan di: {summary_path}")
+        print("="*84 + "\n")
+
     def run_dashboard(self, interval: float = 2.0) -> None:
         """Dashboard teks ringkas di terminal (untuk video demo)."""
         # Tunggu sampai pekerjaan benar-benar dimulai oleh Master
@@ -576,193 +652,250 @@ def main() -> None:
             import random
             cfg["passcode"] = str(random.randint(100000, 999999))
 
-    # ------------------------------------------------------------------ #
-    # LANGKAH 2: Pemilihan Folder yang Akan Dikompresi
-    # ------------------------------------------------------------------ #
-    if not cfg.get("input_dir"):
-        if is_interactive:
-            while True:
-                print("\n" + "="*68)
-                print("📁  LANGKAH 2: PILIH FOLDER YANG AKAN DIKOMPRESI")
-                print("="*68)
-                print("Masukkan path direktori folder file yang ingin dikompres.")
-                print("Contoh: D:\\FileKuliah\\Dataset atau data/sample")
-                print("[Tekan ENTER langsung untuk menggunakan sampel bawaan: data/sample]")
-                try:
-                    folder_input = input("👉 Path folder: ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    folder_input = "data/sample"
-
-                if not folder_input:
-                    folder_input = "data/sample"
-
-                # Bersihkan tanda kutip jika user copy-paste path ber-kutip di Windows
-                folder_input = folder_input.strip('"').strip("'")
-
-                if not os.path.exists(folder_input):
-                    print(f"\n❌ ERROR: Folder '{folder_input}' TIDAK DITEMUKAN!")
-                    print("   Pastikan path folder benar dan coba lagi.\n")
-                    continue
-                if not os.path.isdir(folder_input):
-                    print(f"\n❌ ERROR: '{folder_input}' adalah file, bukan folder direktori!")
-                    print("   Silakan masukkan path direktori folder.\n")
-                    continue
-
-                # Cek isi folder
-                entries = os.listdir(folder_input)
-                if not entries:
-                    print(f"\n⚠️  PERINGATAN: Folder '{folder_input}' KOSONG (tidak berisi file)!")
-                    print("   Silakan masukkan folder yang memiliki file untuk dikompresi.\n")
-                    continue
-
-                cfg["input_dir"] = folder_input
-                print(f"✅ Folder valid dipilih: '{folder_input}' ({len(entries)} item terdeteksi).\n")
-                break
-        else:
-            cfg["input_dir"] = "data/sample"
-
     setup_logging("master", cfg["log_level"],
                   log_file=os.path.join(cfg["output_dir"], "master.jsonl"))
 
     logger.info("=== MASTER NODE DIMULAI ===")
     if cfg.get("passcode"):
         logger.info(f"Sandi Keamanan Master: {cfg['passcode']}")
-    logger.info(f"Input  : {cfg['input_dir']}")
     logger.info(f"Output : {cfg['output_dir']}")
     logger.info(f"Algo   : {cfg['algorithm']} level={cfg['level']}")
     logger.info(f"Mode   : {cfg['mode']}")
 
-    # --- Komponen a: Task Decomposition ---
-    if cfg["input_dir"] == "data/sample" and (not os.path.isdir("data/sample") or not os.listdir("data/sample")):
-        logger.info("Membuat data sintetis sampel otomatis di data/sample...")
-        try:
-            from data.generate_synthetic import generate
-            generate(cfg["input_dir"], num_small=20, num_large=2)
-        except Exception as e:
-            logger.warning(f"Gagal generate data otomatis: {e}")
-
-    logger.info("Mendekomposisi file menjadi task...")
-    tasks = decompose_directory(
-        cfg["input_dir"], cfg["chunk_size"],
-        cfg["algorithm"], cfg["level"]
-    )
-    logger.info(f"Total task: {len(tasks)}")
-    all_tasks_dict = {t.task_id: t for t in tasks}
-
-    if not tasks:
-        logger.error(f"Tidak ada file yang dapat dikompresi di '{cfg['input_dir']}'. Keluar.")
-        sys.exit(1)
-
-    total_orig_bytes = sum(t.length for t in tasks)
     ensure_dir(cfg["output_dir"])
 
     # ------------------------------------------------------------------ #
-    # LANGKAH 3: Inisialisasi Server & Lobi Persiapan Worker
+    # LANGKAH 3: Inisialisasi Server TCP & UDP Auto-Discovery Beacon
     # ------------------------------------------------------------------ #
-    # Jika interaktif: tahan pemberian task (job_started=False) sampai Master tekan Enter
+    # Server TCP dan discovery berjalan terus melayani batch pekerjaan (Multi-Job)
     cfg["job_started"] = not is_interactive
-
     server = MasterServer(cfg)
-    server.prepare(tasks, all_tasks_dict)
 
-    # Mulai thread server TCP
     server_thread = threading.Thread(target=server.serve, daemon=True, name="tcp-server")
     server_thread.start()
 
-    # Mulai FaultMonitor
-    server.fault_monitor.start()
+    dash_thread_started = False
+    job_index = 1
 
-    # Dashboard di thread terpisah
-    dash_thread = threading.Thread(target=server.run_dashboard, daemon=True, name="dashboard")
-    dash_thread.start()
+    while True:
+        # ------------------------------------------------------------------ #
+        # LANGKAH 2: Pemilihan Folder yang Akan Dikompresi (Validasi Otomatis)
+        # ------------------------------------------------------------------ #
+        if not cfg.get("input_dir"):
+            if is_interactive:
+                while True:
+                    print("\n" + "="*68)
+                    print(f"📁  LANGKAH 2: PILIH FOLDER UNTUK PEKERJAAN #{job_index}")
+                    print("="*68)
+                    print("Masukkan path direktori folder file yang ingin dikompres.")
+                    print("Contoh: D:\\FileKuliah\\Dataset atau data/sample")
+                    print("[Tekan ENTER langsung untuk menggunakan sampel bawaan: data/sample]")
+                    try:
+                        folder_input = input("👉 Path folder: ").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        folder_input = "data/sample"
 
-    # Tampilkan Banner Lobi Siap Koneksi
-    print("\n" + "="*76)
-    print("🚀 MASTER DISTRIBUTED COMPRESSION AKTIF (WAITING ROOM)")
-    print("="*76)
-    if cfg.get("passcode"):
-        print(f"🔑 SANDI MASTER    : {cfg['passcode']}")
-    else:
-        print("🔓 MODE KEAMANAN   : Bebas Akses (Tanpa Sandi)")
-    print(f"📁 FOLDER TARGET   : {cfg['input_dir']} ({len(tasks)} task, {format_bytes(total_orig_bytes)})")
-    print(f"🌐 STATUS          : Menunggu Worker bergabung di jaringan LAN...")
-    print("="*76)
-    print(f"👉 Di setiap laptop Worker, cukup jalankan: python worker.py")
-    if cfg.get("passcode"):
-        print(f"👉 Masukkan sandi: {cfg['passcode']}")
-    print("\n[INFO] Daftar Worker yang terhubung akan tampil secara realtime di bawah ini.")
-    print("👉 Tekan [ENTER] kapan saja jika Worker yang masuk sudah cukup untuk MULAI.")
-    print("="*76 + "\n")
+                    if not folder_input:
+                        folder_input = "data/sample"
 
-    # Tunggu konfirmasi Master untuk mulai jika sesi interaktif
-    if not server.job_started:
-        while True:
+                    # Bersihkan tanda kutip jika user copy-paste path ber-kutip di Windows
+                    folder_input = folder_input.strip('"').strip("'")
+
+                    if not os.path.exists(folder_input):
+                        print(f"\n❌ ERROR: Folder '{folder_input}' TIDAK DITEMUKAN!")
+                        print("   Pastikan path folder benar dan coba lagi.\n")
+                        continue
+                    if not os.path.isdir(folder_input):
+                        print(f"\n❌ ERROR: '{folder_input}' adalah file, bukan folder direktori!")
+                        print("   Silakan masukkan path direktori folder.\n")
+                        continue
+
+                    # Cek isi folder
+                    entries = [e for e in os.listdir(folder_input) if os.path.isfile(os.path.join(folder_input, e))]
+                    if not entries:
+                        print(f"\n⚠️  PERINGATAN: Folder '{folder_input}' KOSONG (tidak berisi file)! Silakan masukkan folder lain.\n")
+                        continue
+
+                    cfg["input_dir"] = folder_input
+                    print(f"✅ Folder valid dipilih: '{folder_input}' ({len(entries)} file terdeteksi).\n")
+                    break
+            else:
+                cfg["input_dir"] = "data/sample"
+
+        # Pemilihan Level Kompresi secara interaktif
+        if is_interactive:
+            while True:
+                print("="*68)
+                print("⚙️   PILIH TINGKAT KOMPRESI (COMPRESSION LEVEL 1 - 9)")
+                print("="*68)
+                print("  [1] Cepat (Fast)     - Kecepatan tinggi, hemat CPU, file agak besar")
+                print("  [6] Standar (Normal) - Keseimbangan optimal rasio & kecepatan [Default]")
+                print("  [9] Ultra (Maksimal) - Kompresi paling rapat, hemat storage, butuh waktu lebih")
+                print("="*68)
+                try:
+                    level_input = input("👉 Pilih Level [1-9] (Tekan ENTER untuk default: 6): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    level_input = "6"
+
+                if not level_input:
+                    cfg["level"] = 6
+                    break
+                elif level_input.isdigit() and 1 <= int(level_input) <= 9:
+                    cfg["level"] = int(level_input)
+                    break
+                else:
+                    print("❌ Pilihan tidak valid! Masukkan angka antara 1 sampai 9.\n")
+                    continue
+            print(f"✅ Tingkat kompresi dipilih: Level {cfg['level']}\n")
+
+        # --- Komponen a: Task Decomposition ---
+        if cfg["input_dir"] == "data/sample" and (not os.path.isdir("data/sample") or not os.listdir("data/sample")):
+            logger.info("Membuat data sintetis sampel otomatis di data/sample...")
             try:
-                input()
-            except (EOFError, KeyboardInterrupt):
-                print("\n[!] Dibatalkan oleh pengguna.")
-                server.stop()
-                sys.exit(0)
+                from data.generate_synthetic import generate
+                generate(cfg["input_dir"], num_small=20, num_large=2)
+            except Exception as e:
+                logger.warning(f"Gagal generate data otomatis: {e}")
 
-            with server._registry_lock:
-                active_workers = [w for w in server.worker_registry.values() if w.alive]
+        logger.info(f"Mendekomposisi file dari '{cfg['input_dir']}'...")
+        tasks = decompose_directory(
+            cfg["input_dir"], cfg["chunk_size"],
+            cfg["algorithm"], cfg["level"]
+        )
+        logger.info(f"Total task untuk Job #{job_index}: {len(tasks)}")
+        all_tasks_dict = {t.task_id: t for t in tasks}
 
-            if len(active_workers) == 0:
-                print("⚠️  Belum ada Worker yang terhubung! Tunggu minimal 1 Worker masuk...")
+        if not tasks:
+            logger.error(f"Tidak ada file yang dapat dikompresi di '{cfg['input_dir']}'.")
+            if is_interactive:
+                cfg["input_dir"] = None
                 continue
+            else:
+                sys.exit(1)
 
+        total_orig_bytes = sum(t.length for t in tasks)
+
+        # Siapkan scheduler dan collector untuk batch ini
+        if job_index == 1:
+            server.prepare(tasks, all_tasks_dict)
+            server.fault_monitor.start()
+        else:
+            server.prepare_new_job(tasks, all_tasks_dict)
+
+        if not dash_thread_started:
+            dash_thread = threading.Thread(target=server.run_dashboard, daemon=True, name="dashboard")
+            dash_thread.start()
+            dash_thread_started = True
+
+        # Tampilkan Banner Lobi Siap Koneksi
+        print("\n" + "="*76)
+        print(f"🚀 MASTER DISTRIBUTED COMPRESSION (PEKERJAAN #{job_index} - WAITING ROOM)")
+        print("="*76)
+        if cfg.get("passcode"):
+            print(f"🔑 SANDI MASTER    : {cfg['passcode']}")
+        else:
+            print("🔓 MODE KEAMANAN   : Bebas Akses (Tanpa Sandi)")
+        print(f"📁 FOLDER TARGET   : {cfg['input_dir']} ({len(tasks)} task, {format_bytes(total_orig_bytes)})")
+        print(f"⚡ ALGORITMA       : {cfg['algorithm'].upper()} (Level {cfg['level']})")
+        print(f"🌐 STATUS          : Menunggu konfirmasi Master untuk memulai...")
+        print("="*76)
+        print("👉 Worker yang sudah terhubung akan tetap standby secara otomatis.")
+        print("👉 Tekan [ENTER] jika Worker sudah siap untuk MULAI KOMPRESI!")
+        print("="*76 + "\n")
+
+        # Tampilkan tabel worker yang sudah ada
+        server.print_worker_table()
+
+        # Tunggu konfirmasi Master untuk mulai jika sesi interaktif
+        if is_interactive:
+            while True:
+                try:
+                    input()
+                except (EOFError, KeyboardInterrupt):
+                    print("\n[!] Dibatalkan oleh pengguna.")
+                    server.broadcast_shutdown()
+                    server.stop()
+                    sys.exit(0)
+
+                with server._registry_lock:
+                    active_workers = [w for w in server.worker_registry.values() if w.alive]
+
+                if len(active_workers) == 0:
+                    print("⚠️  Belum ada Worker yang terhubung! Tunggu minimal 1 Worker masuk...")
+                    continue
+
+                server.job_started = True
+                print("\n" + "="*76)
+                print(f"🚀 MEMULAI PEKERJAAN #{job_index}! Kompresi didistribusikan ke {len(active_workers)} Worker...")
+                print("="*76 + "\n")
+                break
+        else:
             server.job_started = True
-            print("\n" + "="*76)
-            print(f"🚀 MEMULAI PEKERJAAN! Kompresi didistribusikan ke {len(active_workers)} Worker...")
-            print("="*76 + "\n")
+
+        # Tunggu semua task selesai
+        start_ts = time.time()
+        logger.info(f"Menunggu task Pekerjaan #{job_index} selesai...")
+        try:
+            while not server.scheduler.is_all_done():
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Dihentikan oleh pengguna")
             break
 
-    # Tunggu semua task selesai
-    start_ts = time.time()
-    logger.info("Menunggu task selesai... (Ctrl+C untuk berhenti)")
-    try:
-        while not server.scheduler.is_all_done():
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Dihentikan oleh pengguna")
+        elapsed = time.time() - start_ts
 
-    elapsed = time.time() - start_ts
+        # Recovery stats & Imbalance metrics
+        recovery = server.fault_monitor.get_recovery_stats() if server.fault_monitor else {}
+        imbalance = server.scheduler.get_imbalance_metrics()
 
-    # Hentikan semua
-    server.broadcast_shutdown()
-    server.fault_monitor.stop()
+        # Ringkasan akhir per pekerjaan
+        summary = server.collector.get_final_summary(
+            server.worker_registry, server.scheduler.total_retries
+        )
+        summary["elapsed_seconds"] = round(elapsed, 3)
+        summary["elapsed"]         = format_duration(elapsed)
+        summary["recovery_stats"]   = recovery
+        summary["imbalance"]       = imbalance
+        summary["algorithm"]       = cfg["algorithm"]
+        summary["job_index"]       = job_index
+        summary["folder_path"]     = cfg["input_dir"]
+
+        # Simpan summary per pekerjaan dan summary global terbaru
+        job_summary_path = os.path.join(cfg["output_dir"], f"summary_job_{job_index}.json")
+        server.collector.save_summary(summary, job_summary_path)
+        global_summary_path = os.path.join(cfg["output_dir"], "summary.json")
+        server.collector.save_summary(summary, global_summary_path)
+
+        # Tampilkan Laporan Feedback & Rekap Lengkap
+        server.print_detailed_report(summary, job_index, cfg["input_dir"])
+
+        # Tanya apakah ada pekerjaan lagi jika interaktif
+        if is_interactive:
+            print("="*84)
+            print(f"🔄  PEKERJAAN #{job_index} TELAH SELESAI DENGAN SUKSES!")
+            print("="*84)
+            try:
+                tanya = input("👉 Apakah ada folder/pekerjaan lain yang ingin dikompresi lagi? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                tanya = "n"
+
+            if tanya in ("y", "yes"):
+                print("\n[OK] Menyiapkan pekerjaan baru. Semua Worker tetap standby terhubung di jaringan...")
+                job_index += 1
+                cfg["input_dir"] = None  # Reset agar meminta input folder baru di Langkah 2
+                continue
+            else:
+                print("\n✨ Seluruh pekerjaan selesai. Mengirim sinyal SHUTDOWN ke semua Worker...")
+                server.broadcast_shutdown()
+                break
+        else:
+            server.broadcast_shutdown()
+            break
+
+    # Hentikan server dan monitor setelah seluruh batch pekerjaan selesai
+    if server.fault_monitor:
+        server.fault_monitor.stop()
     server.stop()
-
-    # Recovery stats
-    recovery = server.fault_monitor.get_recovery_stats()
-    logger.info(f"Recovery Time stats: {recovery}")
-
-    # Imbalance metrics
-    imbalance = server.scheduler.get_imbalance_metrics()
-    logger.info(f"Imbalance (CV={imbalance['cv']}, max/min={imbalance['max_min_ratio']})")
-
-    # Ringkasan akhir (gunakan server.scheduler.total_retries)
-    summary = server.collector.get_final_summary(
-        server.worker_registry, server.scheduler.total_retries
-    )
-    summary["elapsed_seconds"] = round(elapsed, 3)
-    summary["elapsed"]         = format_duration(elapsed)
-    summary["recovery_stats"]   = recovery
-    summary["imbalance"]       = imbalance
-
-    summary_path = os.path.join(cfg["output_dir"], "summary.json")
-    server.collector.save_summary(summary, summary_path)
-
-    print("\n" + "="*60)
-    print("RINGKASAN AKHIR MASTER")
-    print("="*60)
-    for k, v in summary.items():
-        if k != "worker_summary":
-            print(f"  {k:<25}: {v}")
-    print("  Worker breakdown:")
-    for wid, ws in summary.get("worker_summary", {}).items():
-        print(f"    {wid}: tasks={ws['tasks_done']} bytes={ws['bytes']} thr={ws['throughput']} MB/s")
-    print("="*60)
     logger.info("=== MASTER SELESAI ===")
 
 
